@@ -1,0 +1,6 @@
+{
+  "slug": "prompt-eval",
+  "name": "Prompt Eval Simulator",
+  "description": "One-shot prompt runner for the Prompt Evaluation Simulator. Each session should run a single prompt with no chat history.",
+  "format": "interactive"
+}

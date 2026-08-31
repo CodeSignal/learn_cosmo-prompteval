@@ -1,0 +1,9 @@
+.DS_Store
+
+node_modules
+.env
+public/app.bundle.js
+public/hljs-*.css
+chat-sessions.json
+chat-config.json
+.agent-build

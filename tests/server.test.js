@@ -1,0 +1,486 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import request from 'supertest';
+
+// Mock external deps before importing server
+vi.mock('fs/promises', () => ({
+  default: {
+    readFile: vi.fn(),
+    writeFile: vi.fn(),
+  },
+}));
+
+vi.mock('@octavus/server-sdk', () => {
+  return {
+    OctavusClient: function () {
+      this.agentSessions = {
+        create: vi.fn().mockResolvedValue('new-session-id'),
+        attach: vi.fn().mockReturnValue({
+          execute: vi.fn(async function* () {
+            yield { type: 'text-delta', delta: 'mock-output' };
+          }),
+        }),
+      };
+      this.files = {
+        getUploadUrls: vi.fn().mockResolvedValue({ urls: [] }),
+      };
+    },
+    toSSEStream: vi.fn(),
+  };
+});
+
+vi.mock('../lib/octavus-create.js', () => ({
+  createAgentSession: vi.fn().mockResolvedValue('new-session-id'),
+}));
+
+vi.mock('../lib/eval-run.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    runEvalBatch: vi.fn(),
+  };
+});
+
+vi.mock('dotenv/config', () => ({}));
+
+const fs = (await import('fs/promises')).default;
+const { createAgentSession } = await import('../lib/octavus-create.js');
+const { runEvalBatch } = await import('../lib/eval-run.js');
+
+// Set env vars before importing server
+process.env.NODE_ENV = 'test';
+process.env.OCTAVUS_API_URL = 'https://test.api';
+process.env.OCTAVUS_API_KEY = 'test-key';
+process.env.OCTAVUS_AGENT_ID = 'test-agent-id';
+
+const { app } = await import('../server.js');
+
+function mockSessionsFile(data = { sessions: [] }) {
+  fs.readFile.mockImplementation(async (path) => {
+    if (String(path).includes('chat-sessions')) return JSON.stringify(data);
+    if (String(path).includes('chat-config')) return '{}';
+    throw new Error('ENOENT');
+  });
+  fs.writeFile.mockResolvedValue(undefined);
+}
+
+// ── GET /api/config ───────────────────────────────────────────
+
+describe('GET /api/config', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('returns parsed config from chat-config.json', async () => {
+    fs.readFile.mockResolvedValue(JSON.stringify({ model: 'openai/gpt-4o', temperature: 0.5 }));
+    const res = await request(app).get('/api/config');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ model: 'openai/gpt-4o', temperature: 0.5 });
+  });
+
+  it('returns empty object when config file is missing', async () => {
+    fs.readFile.mockRejectedValue(new Error('ENOENT'));
+    const res = await request(app).get('/api/config');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({});
+  });
+
+  it('attaches htmlLang and catalog strings when language matches a locale', async () => {
+    fs.readdir = vi.fn().mockResolvedValue(['es.json']);
+    fs.readFile.mockImplementation(async (p) => {
+      const path = String(p);
+      if (path.includes('chat-config')) return JSON.stringify({ language: 'Spanish', model: 'x' });
+      if (path.endsWith('es.json')) {
+        return JSON.stringify({
+          languageNames: ['es', 'spanish'],
+          strings: { Settings: 'Configuración' },
+        });
+      }
+      throw new Error('ENOENT');
+    });
+    const res = await request(app).get('/api/config');
+    expect(res.status).toBe(200);
+    expect(res.body.htmlLang).toBe('es');
+    expect(res.body.strings.Settings).toBe('Configuración');
+    expect(res.body.language).toBe('Spanish');
+  });
+});
+
+// ── GET /api/models ───────────────────────────────────────────
+
+describe('GET /api/models', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('returns parsed models from text file', async () => {
+    fs.readFile.mockImplementation((path) => {
+      if (path.includes('current-models')) return Promise.resolve('openai/gpt-4o\nanthropic/claude-3\n');
+      if (path.includes('chat-config')) return Promise.resolve('{}');
+      if (path.includes('model-capabilities')) {
+        return Promise.resolve(JSON.stringify({
+          models: {
+            'openai/gpt-4o': { supportsThinking: false },
+            'anthropic/claude-3': { supportsThinking: true },
+          },
+        }));
+      }
+      return Promise.reject(new Error('ENOENT'));
+    });
+    const res = await request(app).get('/api/models');
+    expect(res.status).toBe(200);
+    expect(res.body.models).toEqual(['openai/gpt-4o', 'anthropic/claude-3']);
+    expect(res.body.capabilities).toEqual({
+      'openai/gpt-4o': { supportsThinking: false },
+      'anthropic/claude-3': { supportsThinking: true },
+    });
+  });
+
+  it('filters models by allowedModels config', async () => {
+    fs.readFile.mockImplementation((path) => {
+      if (path.includes('current-models')) return Promise.resolve('openai/gpt-4o\nanthropic/claude-3\n');
+      if (path.includes('chat-config')) return Promise.resolve(JSON.stringify({ allowedModels: ['openai/gpt-4o'] }));
+      if (path.includes('model-capabilities')) return Promise.resolve(JSON.stringify({ models: {} }));
+      return Promise.reject(new Error('ENOENT'));
+    });
+    const res = await request(app).get('/api/models');
+    expect(res.status).toBe(200);
+    expect(res.body.models).toEqual(['openai/gpt-4o']);
+    expect(res.body.capabilities).toHaveProperty('openai/gpt-4o');
+  });
+
+  it('applies thinkingModels config overrides on capabilities', async () => {
+    fs.readFile.mockImplementation((path) => {
+      if (path.includes('current-models')) {
+        return Promise.resolve('openrouter/amazon/nova-premier-v1\n');
+      }
+      if (path.includes('chat-config')) {
+        return Promise.resolve(JSON.stringify({
+          thinkingModels: ['openrouter/amazon/nova-premier-v1'],
+        }));
+      }
+      if (path.includes('model-capabilities')) {
+        return Promise.resolve(JSON.stringify({
+          models: {
+            'openrouter/amazon/nova-premier-v1': { supportsThinking: false },
+          },
+        }));
+      }
+      return Promise.reject(new Error('ENOENT'));
+    });
+    const res = await request(app).get('/api/models');
+    expect(res.status).toBe(200);
+    expect(res.body.capabilities['openrouter/amazon/nova-premier-v1']).toEqual({
+      supportsThinking: true,
+    });
+  });
+
+  it('returns empty array when models file is missing', async () => {
+    fs.readFile.mockRejectedValue(new Error('ENOENT'));
+    const res = await request(app).get('/api/models');
+    expect(res.status).toBe(200);
+    expect(res.body.models).toEqual([]);
+    expect(res.body.capabilities).toEqual({});
+  });
+});
+
+// ── GET /api/sessions ─────────────────────────────────────────
+
+describe('GET /api/sessions', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('returns sessions sorted newest first', async () => {
+    const sessions = {
+      sessions: [
+        { session_id: 'old', created_at: '2026-01-01', updated_at: '2026-01-01', messages: [{ role: 'user', content: 'Old chat' }] },
+        { session_id: 'new', created_at: '2026-06-01', updated_at: '2026-06-01', messages: [{ role: 'user', content: 'New chat' }] },
+      ],
+    };
+    fs.readFile.mockResolvedValue(JSON.stringify(sessions));
+    const res = await request(app).get('/api/sessions');
+    expect(res.status).toBe(200);
+    expect(res.body.sessions).toHaveLength(2);
+    expect(res.body.sessions[0].session_id).toBe('new');
+    expect(res.body.sessions[1].session_id).toBe('old');
+  });
+
+  it('derives titles from the first user message', async () => {
+    const sessions = {
+      sessions: [
+        { session_id: 's1', messages: [{ role: 'user', content: 'Help me with Python' }] },
+      ],
+    };
+    fs.readFile.mockResolvedValue(JSON.stringify(sessions));
+    const res = await request(app).get('/api/sessions');
+    expect(res.body.sessions[0].title).toBe('Help me with Python');
+  });
+
+  it('returns empty list when no sessions file exists', async () => {
+    fs.readFile.mockRejectedValue(new Error('ENOENT'));
+    const res = await request(app).get('/api/sessions');
+    expect(res.status).toBe(200);
+    expect(res.body.sessions).toEqual([]);
+  });
+});
+
+// ── GET /api/session ──────────────────────────────────────────
+
+describe('GET /api/session', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('returns a specific session by id', async () => {
+    const sessions = {
+      sessions: [
+        { session_id: 'target', messages: [{ role: 'user', content: 'Hello' }] },
+      ],
+    };
+    fs.readFile.mockResolvedValue(JSON.stringify(sessions));
+    const res = await request(app).get('/api/session?id=target');
+    expect(res.status).toBe(200);
+    expect(res.body.sessionId).toBe('target');
+    expect(res.body.messages).toHaveLength(1);
+  });
+
+  it('returns 404 when requested session id is not found', async () => {
+    fs.readFile.mockResolvedValue(JSON.stringify({ sessions: [] }));
+    const res = await request(app).get('/api/session?id=nonexistent');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns the most recently updated session when no id given', async () => {
+    const sessions = {
+      sessions: [
+        { session_id: 'older', created_at: '2026-01-01', updated_at: '2026-01-01', messages: [] },
+        { session_id: 'newer', created_at: '2026-06-01', updated_at: '2026-06-01', messages: [] },
+      ],
+    };
+    fs.readFile.mockResolvedValue(JSON.stringify(sessions));
+    const res = await request(app).get('/api/session');
+    expect(res.status).toBe(200);
+    expect(res.body.sessionId).toBe('newer');
+  });
+});
+
+// ── POST /api/sessions ────────────────────────────────────────
+
+describe('POST /api/sessions', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    createAgentSession.mockResolvedValue('new-session-id');
+  });
+
+  it('creates via the dedicated Octavus create helper and persists the record', async () => {
+    mockSessionsFile({ sessions: [] });
+
+    const res = await request(app)
+      .post('/api/sessions')
+      .send({ model: 'anthropic/claude-sonnet-4-6', temperature: 0.7, thinking: 'off' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.sessionId).toBe('new-session-id');
+    expect(createAgentSession).toHaveBeenCalledOnce();
+    expect(createAgentSession.mock.calls[0][0]).toMatchObject({
+      baseUrl: 'https://test.api',
+      apiKey: 'test-key',
+      agentId: 'test-agent-id',
+    });
+
+    const written = JSON.parse(fs.writeFile.mock.calls[0][1]);
+    expect(written.sessions).toHaveLength(1);
+    expect(written.sessions[0].session_id).toBe('new-session-id');
+  });
+
+  it('returns an error and does not persist when createAgentSession rejects', async () => {
+    mockSessionsFile({ sessions: [] });
+    createAgentSession.mockRejectedValueOnce(new Error('octavus down'));
+
+    const res = await request(app).post('/api/sessions').send({});
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(fs.writeFile).not.toHaveBeenCalled();
+  });
+});
+
+// ── DELETE /api/sessions/:sessionId ───────────────────────────
+
+describe('DELETE /api/sessions/:sessionId', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('removes the session and writes back', async () => {
+    const sessions = {
+      sessions: [
+        { session_id: 'keep', messages: [] },
+        { session_id: 'delete-me', messages: [] },
+      ],
+    };
+    fs.readFile.mockResolvedValue(JSON.stringify(sessions));
+    fs.writeFile.mockResolvedValue(undefined);
+
+    const res = await request(app).delete('/api/sessions/delete-me');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+
+    const written = JSON.parse(fs.writeFile.mock.calls[0][1]);
+    expect(written.sessions).toHaveLength(1);
+    expect(written.sessions[0].session_id).toBe('keep');
+  });
+});
+
+// ── POST /api/session/save ────────────────────────────────────
+
+describe('POST /api/session/save', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('updates an existing session with new messages', async () => {
+    const sessions = {
+      sessions: [{ session_id: 's1', created_at: '2026-01-01', messages: [] }],
+    };
+    fs.readFile.mockResolvedValue(JSON.stringify(sessions));
+    fs.writeFile.mockResolvedValue(undefined);
+
+    const newMessages = [{ role: 'user', content: 'Hello' }];
+    const res = await request(app)
+      .post('/api/session/save')
+      .send({ sessionId: 's1', messages: newMessages });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+
+    const written = JSON.parse(fs.writeFile.mock.calls[0][1]);
+    expect(written.sessions[0].messages).toEqual(newMessages);
+    expect(written.sessions[0].updated_at).toBeDefined();
+  });
+
+  it('creates a new session entry if sessionId is not found', async () => {
+    fs.readFile.mockResolvedValue(JSON.stringify({ sessions: [] }));
+    fs.writeFile.mockResolvedValue(undefined);
+
+    const res = await request(app)
+      .post('/api/session/save')
+      .send({ sessionId: 'brand-new', messages: [{ role: 'user', content: 'Hi' }] });
+
+    expect(res.status).toBe(200);
+    const written = JSON.parse(fs.writeFile.mock.calls[0][1]);
+    expect(written.sessions).toHaveLength(1);
+    expect(written.sessions[0].session_id).toBe('brand-new');
+  });
+
+  it('returns 400 when sessionId is missing', async () => {
+    const res = await request(app)
+      .post('/api/session/save')
+      .send({ messages: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when messages is not an array', async () => {
+    const res = await request(app)
+      .post('/api/session/save')
+      .send({ sessionId: 's1', messages: 'not-an-array' });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/upload-urls ─────────────────────────────────────
+
+describe('POST /api/upload-urls', () => {
+  it('returns 400 when sessionId is missing', async () => {
+    const res = await request(app)
+      .post('/api/upload-urls')
+      .send({ files: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when files is missing', async () => {
+    const res = await request(app)
+      .post('/api/upload-urls')
+      .send({ sessionId: 's1' });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/trigger ─────────────────────────────────────────
+
+describe('POST /api/trigger', () => {
+  it('returns 400 when sessionId is missing', async () => {
+    const res = await request(app)
+      .post('/api/trigger')
+      .send({ message: 'hello' });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── POST /api/eval/run ────────────────────────────────────────
+
+describe('POST /api/eval/run', () => {
+  beforeEach(() => {
+    runEvalBatch.mockReset();
+  });
+
+  it('returns 400 when promptTemplate is missing', async () => {
+    const res = await request(app).post('/api/eval/run').send({ input: 'x', runs: 1 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/promptTemplate/);
+    expect(runEvalBatch).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 when runs is out of range', async () => {
+    const res = await request(app)
+      .post('/api/eval/run')
+      .send({ promptTemplate: 'Hi {{input}}', input: 'there', runs: 9 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/runs/);
+    expect(runEvalBatch).not.toHaveBeenCalled();
+  });
+
+  it('returns the batch payload from runEvalBatch', async () => {
+    runEvalBatch.mockResolvedValue({
+      renderedPrompt: 'Say hello',
+      runs: 2,
+      expectedAnswer: 'hello',
+      metricId: 'exact-match',
+      aggregate: { mean: 1, min: 1, max: 1, count: 2 },
+      results: [
+        { run: 1, sessionId: 'sess-a', output: 'hello', error: null, status: 'ok', score: 1 },
+        { run: 2, sessionId: 'sess-b', output: 'hello', error: null, status: 'ok', score: 1 },
+      ],
+    });
+
+    const res = await request(app)
+      .post('/api/eval/run')
+      .send({
+        promptTemplate: 'Say {{input}}',
+        input: 'hello',
+        runs: 2,
+        expectedAnswer: 'hello',
+        metricId: 'exact-match',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.renderedPrompt).toBe('Say hello');
+    expect(res.body.runs).toBe(2);
+    expect(res.body.aggregate.mean).toBe(1);
+    expect(res.body.results).toHaveLength(2);
+    expect(runEvalBatch).toHaveBeenCalledOnce();
+    const [, opts] = runEvalBatch.mock.calls[0];
+    expect(opts).toEqual({
+      promptTemplate: 'Say {{input}}',
+      input: 'hello',
+      runs: 2,
+      expectedAnswer: 'hello',
+      metricId: 'exact-match',
+    });
+  });
+
+  it('rejects unknown metricId', async () => {
+    const res = await request(app)
+      .post('/api/eval/run')
+      .send({ promptTemplate: 'Hi', input: 'x', runs: 1, metricId: 'semantic-nope' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/metricId/);
+    expect(runEvalBatch).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /api/eval/metrics', () => {
+  it('lists registered metrics', async () => {
+    const res = await request(app).get('/api/eval/metrics');
+    expect(res.status).toBe(200);
+    expect(res.body.defaultMetricId).toBe('exact-match');
+    expect(res.body.metrics.map((m) => m.id)).toContain('string-similarity');
+  });
+});
