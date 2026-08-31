@@ -260,6 +260,50 @@ select.input {
   color: var(--Colors-Text-Body-Medium);
 }
 
+.eval-cases-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--UI-Spacing-spacing-m, 16px);
+  width: 100%;
+}
+
+.eval-cases-title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--Colors-Text-Body-Medium);
+}
+
+.eval-cases {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-m, 16px);
+  width: 100%;
+}
+
+.eval-case {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-s, 12px);
+  padding: var(--UI-Spacing-spacing-m, 16px);
+  border: 1px solid var(--Colors-Stroke-Light, var(--Colors-Stroke-Default));
+  border-radius: var(--UI-Radius-radius-s);
+  background: var(--Colors-Backgrounds-Main-Top, var(--Colors-Base-Neutral-00));
+}
+
+.eval-case__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--UI-Spacing-spacing-s, 12px);
+}
+
+.eval-case__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.eval-overall-grid,
 .eval-compare-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -269,9 +313,50 @@ select.input {
 }
 
 @media (min-width: 800px) {
+  .eval-overall-grid,
   .eval-compare-grid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+}
+
+.eval-case-mean-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--Colors-Text-Body-Medium);
+}
+
+.eval-case-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-xl, 32px);
+  width: 100%;
+  margin-top: var(--UI-Spacing-spacing-xl, 32px);
+}
+
+.eval-case-result__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--UI-Spacing-spacing-m, 16px);
+}
+
+.eval-case-result__header h3 {
+  margin: 0 0 4px;
+}
+
+.eval-case-result__meta {
+  margin: 0;
+  color: var(--Colors-Text-Body-Light);
+}
+
+.eval-case-result__verdict {
+  margin: 0;
+  font-weight: 600;
 }
 
 .eval-prompt-col {

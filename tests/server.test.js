@@ -511,14 +511,14 @@ describe('POST /api/eval/compare', () => {
   it('returns comparison payload', async () => {
     runPromptComparison.mockResolvedValue({
       conditions: {
-        input: 'France',
-        expectedAnswer: 'Paris',
         metricId: 'exact-match',
         runs: 2,
+        caseCount: 2,
       },
+      cases: [],
       prompts: [
-        { id: 'A', label: 'Prompt A', aggregate: { mean: 1, min: 1, max: 1, count: 2 }, results: [] },
-        { id: 'B', label: 'Prompt B', aggregate: { mean: 0, min: 0, max: 0, count: 2 }, results: [] },
+        { id: 'A', label: 'Prompt A', aggregate: { mean: 1, min: 1, max: 1, count: 2 }, caseSummaries: [] },
+        { id: 'B', label: 'Prompt B', aggregate: { mean: 0, min: 0, max: 0, count: 2 }, caseSummaries: [] },
       ],
       comparison: { outcome: 'winner', winnerId: 'A', means: { A: 1, B: 0 } },
     });
@@ -528,8 +528,10 @@ describe('POST /api/eval/compare', () => {
       .send({
         promptA: 'A {{input}}',
         promptB: 'B {{input}}',
-        input: 'France',
-        expectedAnswer: 'Paris',
+        cases: [
+          { input: 'France', expectedAnswer: 'Paris' },
+          { input: 'Japan', expectedAnswer: 'Tokyo' },
+        ],
         metricId: 'exact-match',
         runs: 2,
       });
@@ -539,7 +541,7 @@ describe('POST /api/eval/compare', () => {
     expect(runPromptComparison).toHaveBeenCalledOnce();
     const [, opts] = runPromptComparison.mock.calls[0];
     expect(opts.prompts.map((p) => p.id)).toEqual(['A', 'B']);
-    expect(opts.input).toBe('France');
+    expect(opts.cases).toHaveLength(2);
     expect(opts.runs).toBe(2);
   });
 });

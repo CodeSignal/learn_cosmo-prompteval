@@ -30,15 +30,14 @@
         </div>
       </div>
       <p class="body-small eval-header__lede">
-        Compare two prompt templates under the same conditions: shared input, expected answer,
-        metric, and run count. Each run uses a fresh Octavus session. Use <code>{{input}}</code>
-        in either template.
+        Compare two prompt templates across multiple test cases under the same metric and run count.
+        Each run uses a fresh Octavus session. Use <code>{{input}}</code> in either template.
       </p>
     </header>
 
     <main class="eval-stack">
       <section class="eval-panel box card non-interactive" aria-labelledby="setupHeading">
-        <h2 class="heading-xsmall" id="setupHeading">Shared conditions</h2>
+        <h2 class="heading-xsmall" id="setupHeading">Setup</h2>
 
         <div class="eval-prompt-grid">
           <label class="eval-field">
@@ -46,7 +45,7 @@
             <textarea
               class="input"
               id="promptA"
-              rows="7"
+              rows="6"
               placeholder="Prompt template A…&#10;&#10;{{input}}"
               spellcheck="false"
             ></textarea>
@@ -57,34 +56,18 @@
             <textarea
               class="input"
               id="promptB"
-              rows="7"
+              rows="6"
               placeholder="Prompt template B…&#10;&#10;{{input}}"
               spellcheck="false"
             ></textarea>
           </label>
         </div>
 
-        <label class="eval-field">
-          <span class="body-xsmall eval-field__label">Input</span>
-          <textarea
-            class="input"
-            id="evalInput"
-            rows="3"
-            placeholder="Shared test-case input…"
-            spellcheck="false"
-          ></textarea>
-        </label>
-
-        <label class="eval-field">
-          <span class="body-xsmall eval-field__label">Expected answer <span class="eval-optional">(optional — needed to pick a winner)</span></span>
-          <textarea
-            class="input"
-            id="expectedAnswer"
-            rows="2"
-            placeholder="Leave blank to compare raw outputs only…"
-            spellcheck="false"
-          ></textarea>
-        </label>
+        <div class="eval-cases-header">
+          <h3 class="body-xsmall eval-cases-title">Test cases <span class="eval-optional">(1–5)</span></h3>
+          <button type="button" class="button button-secondary" id="addCaseBtn">Add case</button>
+        </div>
+        <div class="eval-cases" id="casesList"></div>
 
         <div class="eval-controls-row">
           <label class="eval-field eval-field--metric">
@@ -105,7 +88,7 @@
               type="number"
               min="1"
               max="5"
-              value="3"
+              value="2"
               inputmode="numeric"
             />
           </label>
@@ -129,15 +112,15 @@
           <span class="cosmo-avatar large" aria-hidden="true"></span>
           <p class="heading-xsmall empty-state__heading">Ready when you are</p>
           <p class="body-small">
-            Run a comparison to see Prompt A vs Prompt B side by side. Look at mean scores and
-            per-run scores to judge both which prompt wins and how consistent it is.
+            Compare prompts across several cases. Overall mean picks a winner; per-case scores show
+            whether that win is consistent.
           </p>
         </div>
 
         <div id="comparisonBody" hidden>
           <div class="eval-verdict" id="verdictBanner" role="status"></div>
-
-          <div class="eval-compare-grid" id="compareGrid"></div>
+          <div class="eval-overall-grid" id="overallGrid"></div>
+          <div class="eval-case-results" id="caseResults"></div>
         </div>
       </section>
     </main>

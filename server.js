@@ -22,7 +22,7 @@ import {
 import { createAgentSession } from './lib/octavus-create.js';
 import { enqueueSessionsWrite } from './lib/sessions-file.js';
 import { MAX_EVAL_RUNS, MIN_EVAL_RUNS, runEvalBatch } from './lib/eval-run.js';
-import { runPromptComparison } from './lib/eval-compare.js';
+import { runPromptComparison, MAX_EVAL_CASES } from './lib/eval-compare.js';
 import {
   DEFAULT_METRIC_ID,
   isValidMetricId,
@@ -455,9 +455,8 @@ app.post('/api/eval/run', async (req, res) => {
 });
 
 // ── POST /api/eval/compare ────────────────────────────────────
-// Compare Prompt A vs Prompt B under identical conditions (shared input,
-// expected answer, metric, run count). Each run still uses a fresh session.
-// Shape is ready for multi-test-case later: prompts[] + shared conditions.
+// Compare Prompt A vs Prompt B under identical conditions across one or more
+// test cases. Each run still uses a fresh session.
 app.post('/api/eval/compare', async (req, res) => {
   if (!AGENT_ID) {
     return res.status(503).json({ error: 'OCTAVUS_AGENT_ID is not configured' });
@@ -466,6 +465,7 @@ app.post('/api/eval/compare', async (req, res) => {
   const {
     promptA,
     promptB,
+    cases,
     input,
     runs,
     expectedAnswer,
@@ -477,6 +477,16 @@ app.post('/api/eval/compare', async (req, res) => {
   }
   if (typeof promptB !== 'string') {
     return res.status(400).json({ error: 'promptB (string) is required' });
+  }
+  if (cases !== undefined) {
+    if (!Array.isArray(cases)) {
+      return res.status(400).json({ error: 'cases must be an array when provided' });
+    }
+    if (cases.length < 1 || cases.length > MAX_EVAL_CASES) {
+      return res.status(400).json({
+        error: `cases must contain between 1 and ${MAX_EVAL_CASES} items`,
+      });
+    }
   }
   if (input !== undefined && typeof input !== 'string') {
     return res.status(400).json({ error: 'input must be a string when provided' });
@@ -511,6 +521,7 @@ app.post('/api/eval/compare', async (req, res) => {
           { id: 'A', label: 'Prompt A', promptTemplate: promptA },
           { id: 'B', label: 'Prompt B', promptTemplate: promptB },
         ],
+        cases: Array.isArray(cases) ? cases : undefined,
         input: typeof input === 'string' ? input : '',
         expectedAnswer: typeof expectedAnswer === 'string' ? expectedAnswer : '',
         metricId: typeof metricId === 'string' && metricId ? metricId : DEFAULT_METRIC_ID,
@@ -519,7 +530,13 @@ app.post('/api/eval/compare', async (req, res) => {
     );
     res.json(result);
   } catch (err) {
-    if (err?.code === 'EMPTY_PROMPT' || err?.code === 'NEED_PROMPTS' || err?.code === 'INVALID_PROMPT') {
+    if (
+      err?.code === 'EMPTY_PROMPT'
+      || err?.code === 'NEED_PROMPTS'
+      || err?.code === 'INVALID_PROMPT'
+      || err?.code === 'INVALID_CASE'
+      || err?.code === 'TOO_MANY_CASES'
+    ) {
       return res.status(400).json({ error: err.message });
     }
     console.error('[eval/compare] Error:', err);
