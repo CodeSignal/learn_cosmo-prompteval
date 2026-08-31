@@ -40,11 +40,20 @@ vi.mock('../lib/eval-run.js', async (importOriginal) => {
   };
 });
 
+vi.mock('../lib/eval-compare.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    runPromptComparison: vi.fn(),
+  };
+});
+
 vi.mock('dotenv/config', () => ({}));
 
 const fs = (await import('fs/promises')).default;
 const { createAgentSession } = await import('../lib/octavus-create.js');
 const { runEvalBatch } = await import('../lib/eval-run.js');
+const { runPromptComparison } = await import('../lib/eval-compare.js');
 
 // Set env vars before importing server
 process.env.NODE_ENV = 'test';
@@ -482,5 +491,55 @@ describe('GET /api/eval/metrics', () => {
     expect(res.status).toBe(200);
     expect(res.body.defaultMetricId).toBe('exact-match');
     expect(res.body.metrics.map((m) => m.id)).toContain('string-similarity');
+  });
+});
+
+describe('POST /api/eval/compare', () => {
+  beforeEach(() => {
+    runPromptComparison.mockReset();
+  });
+
+  it('returns 400 when promptA is missing', async () => {
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({ promptB: 'B', input: 'x', runs: 1 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/promptA/);
+    expect(runPromptComparison).not.toHaveBeenCalled();
+  });
+
+  it('returns comparison payload', async () => {
+    runPromptComparison.mockResolvedValue({
+      conditions: {
+        input: 'France',
+        expectedAnswer: 'Paris',
+        metricId: 'exact-match',
+        runs: 2,
+      },
+      prompts: [
+        { id: 'A', label: 'Prompt A', aggregate: { mean: 1, min: 1, max: 1, count: 2 }, results: [] },
+        { id: 'B', label: 'Prompt B', aggregate: { mean: 0, min: 0, max: 0, count: 2 }, results: [] },
+      ],
+      comparison: { outcome: 'winner', winnerId: 'A', means: { A: 1, B: 0 } },
+    });
+
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({
+        promptA: 'A {{input}}',
+        promptB: 'B {{input}}',
+        input: 'France',
+        expectedAnswer: 'Paris',
+        metricId: 'exact-match',
+        runs: 2,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.comparison.winnerId).toBe('A');
+    expect(runPromptComparison).toHaveBeenCalledOnce();
+    const [, opts] = runPromptComparison.mock.calls[0];
+    expect(opts.prompts.map((p) => p.id)).toEqual(['A', 'B']);
+    expect(opts.input).toBe('France');
+    expect(opts.runs).toBe(2);
   });
 });

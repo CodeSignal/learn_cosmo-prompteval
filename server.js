@@ -22,6 +22,7 @@ import {
 import { createAgentSession } from './lib/octavus-create.js';
 import { enqueueSessionsWrite } from './lib/sessions-file.js';
 import { MAX_EVAL_RUNS, MIN_EVAL_RUNS, runEvalBatch } from './lib/eval-run.js';
+import { runPromptComparison } from './lib/eval-compare.js';
 import {
   DEFAULT_METRIC_ID,
   isValidMetricId,
@@ -450,6 +451,79 @@ app.post('/api/eval/run', async (req, res) => {
     }
     console.error('[eval/run] Error:', err);
     res.status(500).json({ error: 'Failed to run prompt evaluation' });
+  }
+});
+
+// ── POST /api/eval/compare ────────────────────────────────────
+// Compare Prompt A vs Prompt B under identical conditions (shared input,
+// expected answer, metric, run count). Each run still uses a fresh session.
+// Shape is ready for multi-test-case later: prompts[] + shared conditions.
+app.post('/api/eval/compare', async (req, res) => {
+  if (!AGENT_ID) {
+    return res.status(503).json({ error: 'OCTAVUS_AGENT_ID is not configured' });
+  }
+
+  const {
+    promptA,
+    promptB,
+    input,
+    runs,
+    expectedAnswer,
+    metricId,
+  } = req.body ?? {};
+
+  if (typeof promptA !== 'string') {
+    return res.status(400).json({ error: 'promptA (string) is required' });
+  }
+  if (typeof promptB !== 'string') {
+    return res.status(400).json({ error: 'promptB (string) is required' });
+  }
+  if (input !== undefined && typeof input !== 'string') {
+    return res.status(400).json({ error: 'input must be a string when provided' });
+  }
+  if (expectedAnswer !== undefined && expectedAnswer !== null && typeof expectedAnswer !== 'string') {
+    return res.status(400).json({ error: 'expectedAnswer must be a string when provided' });
+  }
+  if (metricId !== undefined && metricId !== null && metricId !== '') {
+    if (!isValidMetricId(metricId)) {
+      return res.status(400).json({ error: `Unknown metricId "${metricId}"` });
+    }
+  }
+  if (runs !== undefined && runs !== null) {
+    const parsed = Number.parseInt(String(runs), 10);
+    if (!Number.isFinite(parsed) || parsed < MIN_EVAL_RUNS || parsed > MAX_EVAL_RUNS) {
+      return res.status(400).json({
+        error: `runs must be an integer between ${MIN_EVAL_RUNS} and ${MAX_EVAL_RUNS}`,
+      });
+    }
+  }
+
+  try {
+    const result = await runPromptComparison(
+      {
+        baseUrl: process.env.OCTAVUS_API_URL,
+        apiKey: process.env.OCTAVUS_API_KEY,
+        agentId: AGENT_ID,
+        octavus,
+      },
+      {
+        prompts: [
+          { id: 'A', label: 'Prompt A', promptTemplate: promptA },
+          { id: 'B', label: 'Prompt B', promptTemplate: promptB },
+        ],
+        input: typeof input === 'string' ? input : '',
+        expectedAnswer: typeof expectedAnswer === 'string' ? expectedAnswer : '',
+        metricId: typeof metricId === 'string' && metricId ? metricId : DEFAULT_METRIC_ID,
+        runs,
+      },
+    );
+    res.json(result);
+  } catch (err) {
+    if (err?.code === 'EMPTY_PROMPT' || err?.code === 'NEED_PROMPTS' || err?.code === 'INVALID_PROMPT') {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('[eval/compare] Error:', err);
+    res.status(500).json({ error: 'Failed to compare prompts' });
   }
 });
 

@@ -18,8 +18,20 @@ code {
   font-size: 0.92em;
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .eval-app {
-  max-width: 1100px;
+  max-width: 1120px;
   margin: 0 auto;
   padding: var(--UI-Spacing-spacing-xl, 32px) var(--UI-Spacing-spacing-l, 24px)
     var(--UI-Spacing-spacing-2xl, 48px);
@@ -29,34 +41,69 @@ code {
   margin-bottom: var(--UI-Spacing-spacing-xl, 32px);
 }
 
+.eval-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--UI-Spacing-spacing-m, 16px);
+  margin-bottom: var(--UI-Spacing-spacing-m, 16px);
+}
+
+.eval-brand__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-xs, 8px);
+  min-width: 0;
+}
+
+.eval-brand__text h1 {
+  margin: 0;
+}
+
 .eval-header__eyebrow {
-  margin: 0 0 var(--UI-Spacing-spacing-xs, 8px);
+  margin: 0;
   color: var(--Colors-Text-Body-Light);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
-.eval-header h1 {
-  margin: 0 0 var(--UI-Spacing-spacing-s, 12px);
-}
-
 .eval-header__lede {
   margin: 0;
-  max-width: 62ch;
+  max-width: 70ch;
   color: var(--Colors-Text-Body-Medium);
 }
 
-.eval-layout {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--UI-Spacing-spacing-l, 24px);
+/* Cosmo character avatar (same asset/style as learn_cosmo-chat) */
+.cosmo-avatar {
+  display: inline-block;
+  flex-shrink: 0;
+  vertical-align: middle;
+  background-image: url(/Images/cosmo-icon.png);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  width: 24px;
+  height: 24px;
 }
 
-@media (min-width: 900px) {
-  .eval-layout {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
-  }
+.cosmo-avatar.large {
+  width: 48px;
+  height: 48px;
+}
+
+.cosmo-avatar.medium {
+  width: 24px;
+  height: 24px;
+}
+
+.cosmo-avatar.small {
+  width: var(--UI-Spacing-spacing-ml, 20px);
+  height: var(--UI-Spacing-spacing-ml, 20px);
+}
+
+.eval-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-l, 24px);
 }
 
 .eval-panel {
@@ -71,6 +118,19 @@ code {
 .eval-results-header {
   margin: 0;
   align-self: stretch;
+}
+
+.eval-prompt-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--UI-Spacing-spacing-m, 16px);
+  width: 100%;
+}
+
+@media (min-width: 800px) {
+  .eval-prompt-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 
 .eval-field {
@@ -96,10 +156,6 @@ code {
 
 .eval-optional {
   font-weight: 400;
-  color: var(--Colors-Text-Body-Light);
-}
-
-.eval-field__hint {
   color: var(--Colors-Text-Body-Light);
 }
 
@@ -152,7 +208,108 @@ select.input {
 
 .eval-results-empty {
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--UI-Spacing-spacing-ms, 12px);
+  padding: var(--UI-Spacing-spacing-xl, 32px) var(--UI-Spacing-spacing-m, 16px);
   color: var(--Colors-Text-Body-Light);
+  user-select: none;
+}
+
+.eval-results-empty[hidden] {
+  display: none !important;
+}
+
+.eval-results-empty .empty-state__heading {
+  margin: 0;
+  color: var(--Colors-Text-Body-Default);
+}
+
+.eval-results-empty .body-small {
+  margin: 0;
+  max-width: 48ch;
+}
+
+.eval-verdict {
+  width: 100%;
+  padding: var(--UI-Spacing-spacing-m, 16px);
+  border-radius: var(--UI-Radius-radius-s);
+  border: 1px solid var(--Colors-Stroke-Light, var(--Colors-Stroke-Default));
+  background: var(--Colors-Base-Neutral-20, var(--Colors-Backgrounds-Main-Medium, transparent));
+}
+
+.eval-verdict--winner {
+  border-color: var(--Colors-Base-Accent-Green-600, #198e59);
+  background: color-mix(in srgb, var(--Colors-Base-Accent-Green-600, #198e59) 8%, transparent);
+}
+
+.eval-verdict--tie,
+.eval-verdict--neutral {
+  border-color: var(--Colors-Stroke-Default);
+}
+
+.eval-verdict__title {
+  margin: 0 0 4px;
+}
+
+.eval-verdict__detail {
+  margin: 0;
+  color: var(--Colors-Text-Body-Medium);
+}
+
+.eval-compare-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--UI-Spacing-spacing-l, 24px);
+  width: 100%;
+  margin-top: var(--UI-Spacing-spacing-m, 16px);
+}
+
+@media (min-width: 800px) {
+  .eval-compare-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+.eval-prompt-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-m, 16px);
+  min-width: 0;
+}
+
+.eval-prompt-col__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--UI-Spacing-spacing-s, 12px);
+}
+
+.eval-prompt-col__header h3 {
+  margin: 0;
+}
+
+.eval-prompt-col--winner .eval-prompt-summary__mean {
+  color: var(--Colors-Base-Accent-Green-700, #147a4c);
+}
+
+.eval-prompt-summary {
+  padding: var(--UI-Spacing-spacing-s, 12px) 0;
+  border-bottom: 1px solid var(--Colors-Stroke-Light, var(--Colors-Stroke-Default));
+}
+
+.eval-prompt-summary__mean {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.eval-prompt-summary__range {
+  margin: 4px 0 0;
+  color: var(--Colors-Text-Body-Light);
+  font-variant-numeric: tabular-nums;
 }
 
 .eval-results {
@@ -195,37 +352,6 @@ select.input {
 
 .eval-result__score--na {
   color: var(--Colors-Text-Body-Light);
-}
-
-.eval-aggregate {
-  width: 100%;
-  padding: var(--UI-Spacing-spacing-m, 16px);
-  border-radius: var(--UI-Radius-radius-s);
-  background: var(--Colors-Base-Neutral-20, var(--Colors-Backgrounds-Main-Medium, transparent));
-  border: 1px solid var(--Colors-Stroke-Light, var(--Colors-Stroke-Default));
-}
-
-.eval-aggregate__title {
-  margin: 0 0 var(--UI-Spacing-spacing-s, 12px);
-  color: var(--Colors-Text-Body-Medium);
-  font-weight: 600;
-}
-
-.eval-aggregate__stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--UI-Spacing-spacing-m, 16px);
-  margin: 0;
-}
-
-.eval-aggregate__stats dt {
-  margin: 0 0 4px;
-  color: var(--Colors-Text-Body-Light);
-}
-
-.eval-aggregate__stats dd {
-  margin: 0;
-  font-variant-numeric: tabular-nums;
 }
 
 .eval-result__session {

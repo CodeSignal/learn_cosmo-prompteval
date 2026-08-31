@@ -22,48 +22,66 @@
 <body>
   <div class="eval-app">
     <header class="eval-header">
-      <p class="body-xsmall eval-header__eyebrow">CodeSignal learning</p>
-      <h1 class="heading-small">Prompt Evaluation Simulator</h1>
+      <div class="eval-brand">
+        <span class="cosmo-avatar large" aria-hidden="true"></span>
+        <div class="eval-brand__text">
+          <p class="body-xsmall eval-header__eyebrow">Cosmo · CodeSignal learning</p>
+          <h1 class="heading-small">Prompt Evaluation Simulator</h1>
+        </div>
+      </div>
       <p class="body-small eval-header__lede">
-        Run the same prompt multiple times on independent Octavus sessions, then score each output
-        against an optional expected answer. Use <code>{{input}}</code> in the template to insert
-        the evaluation input.
+        Compare two prompt templates under the same conditions: shared input, expected answer,
+        metric, and run count. Each run uses a fresh Octavus session. Use <code>{{input}}</code>
+        in either template.
       </p>
     </header>
 
-    <main class="eval-layout">
+    <main class="eval-stack">
       <section class="eval-panel box card non-interactive" aria-labelledby="setupHeading">
-        <h2 class="heading-xsmall" id="setupHeading">Setup</h2>
+        <h2 class="heading-xsmall" id="setupHeading">Shared conditions</h2>
 
-        <label class="eval-field">
-          <span class="body-xsmall eval-field__label">Prompt template</span>
-          <textarea
-            class="input"
-            id="promptTemplate"
-            rows="7"
-            placeholder="Summarize the following text in one sentence:&#10;&#10;{{input}}"
-            spellcheck="false"
-          ></textarea>
-        </label>
+        <div class="eval-prompt-grid">
+          <label class="eval-field">
+            <span class="body-xsmall eval-field__label">Prompt A</span>
+            <textarea
+              class="input"
+              id="promptA"
+              rows="7"
+              placeholder="Prompt template A…&#10;&#10;{{input}}"
+              spellcheck="false"
+            ></textarea>
+          </label>
+
+          <label class="eval-field">
+            <span class="body-xsmall eval-field__label">Prompt B</span>
+            <textarea
+              class="input"
+              id="promptB"
+              rows="7"
+              placeholder="Prompt template B…&#10;&#10;{{input}}"
+              spellcheck="false"
+            ></textarea>
+          </label>
+        </div>
 
         <label class="eval-field">
           <span class="body-xsmall eval-field__label">Input</span>
           <textarea
             class="input"
             id="evalInput"
-            rows="4"
-            placeholder="Paste the test case input here…"
+            rows="3"
+            placeholder="Shared test-case input…"
             spellcheck="false"
           ></textarea>
         </label>
 
         <label class="eval-field">
-          <span class="body-xsmall eval-field__label">Expected answer <span class="eval-optional">(optional)</span></span>
+          <span class="body-xsmall eval-field__label">Expected answer <span class="eval-optional">(optional — needed to pick a winner)</span></span>
           <textarea
             class="input"
             id="expectedAnswer"
-            rows="3"
-            placeholder="Leave blank to collect outputs without scoring…"
+            rows="2"
+            placeholder="Leave blank to compare raw outputs only…"
             spellcheck="false"
           ></textarea>
         </label>
@@ -71,19 +89,16 @@
         <div class="eval-controls-row">
           <label class="eval-field eval-field--metric">
             <span class="body-xsmall eval-field__label">Metric</span>
-            <select class="input" id="metricSelect" aria-describedby="metricHint">
+            <select class="input" id="metricSelect">
               <option value="exact-match">Exact Match</option>
               <option value="exact-match-ci">Case-insensitive Exact Match</option>
               <option value="contains">Contains</option>
               <option value="string-similarity">Simple string similarity</option>
             </select>
-            <span class="body-xxsmall eval-field__hint" id="metricHint">
-              Scoring applies only when an expected answer is provided.
-            </span>
           </label>
 
           <label class="eval-field eval-field--inline">
-            <span class="body-xsmall eval-field__label">Runs (1–5)</span>
+            <span class="body-xsmall eval-field__label">Runs each (1–5)</span>
             <input
               class="input eval-runs-input"
               id="runCount"
@@ -97,7 +112,7 @@
         </div>
 
         <div class="eval-actions">
-          <button type="button" class="button button-primary" id="runBtn">Run evaluation</button>
+          <button type="button" class="button button-primary" id="runBtn">Compare prompts</button>
           <p class="body-xxsmall eval-status" id="statusText" role="status" aria-live="polite"></p>
         </div>
 
@@ -106,33 +121,24 @@
 
       <section class="eval-panel box card non-interactive" aria-labelledby="resultsHeading">
         <div class="eval-results-header">
-          <h2 class="heading-xsmall" id="resultsHeading">Results</h2>
+          <h2 class="heading-xsmall" id="resultsHeading">Comparison results</h2>
           <p class="body-xxsmall eval-results-meta" id="resultsMeta" hidden></p>
         </div>
 
-        <div class="eval-aggregate" id="aggregatePanel" hidden>
-          <h3 class="body-xsmall eval-aggregate__title">Aggregate scores</h3>
-          <dl class="eval-aggregate__stats">
-            <div>
-              <dt class="body-xxsmall">Mean</dt>
-              <dd class="heading-xsmall" id="aggMean">—</dd>
-            </div>
-            <div>
-              <dt class="body-xxsmall">Min</dt>
-              <dd class="heading-xsmall" id="aggMin">—</dd>
-            </div>
-            <div>
-              <dt class="body-xxsmall">Max</dt>
-              <dd class="heading-xsmall" id="aggMax">—</dd>
-            </div>
-          </dl>
+        <div class="eval-results-empty" id="resultsEmpty">
+          <span class="cosmo-avatar large" aria-hidden="true"></span>
+          <p class="heading-xsmall empty-state__heading">Ready when you are</p>
+          <p class="body-small">
+            Run a comparison to see Prompt A vs Prompt B side by side. Look at mean scores and
+            per-run scores to judge both which prompt wins and how consistent it is.
+          </p>
         </div>
 
-        <div class="eval-results-empty body-small" id="resultsEmpty">
-          Outputs will appear here after you run an evaluation. Each run uses a fresh Octavus session.
-        </div>
+        <div id="comparisonBody" hidden>
+          <div class="eval-verdict" id="verdictBanner" role="status"></div>
 
-        <ol class="eval-results" id="resultsList" hidden></ol>
+          <div class="eval-compare-grid" id="compareGrid"></div>
+        </div>
       </section>
     </main>
   </div>

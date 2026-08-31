@@ -7,8 +7,9 @@ Learners run the same prompt template against an input across multiple **indepen
 ## Milestone status
 
 1. **Done** — Prompt template + input + 1–5 independent runs → collect outputs  
-2. **Done** — Optional expected answer + metrics (exact match, case-insensitive, contains, string similarity) + mean/min/max  
-3. **Next** — Prompt A vs Prompt B comparison (and later charts / model comparison)
+2. **Done** — Optional expected answer + metrics + mean/min/max  
+3. **Done** — Prompt A vs Prompt B under shared conditions (winner by mean)  
+4. **Next** — Evaluation across multiple test cases (not just one input)
 
 ## Setup
 
