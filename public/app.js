@@ -1,10 +1,18 @@
 /**
  * Prompt Evaluation Simulator – client.
- * Progressive disclosure: summary results first; case/run detail on demand.
+ * Single-prompt first; optional A vs B compare. Cases append under prompts.
  */
 
 const promptAEl = document.getElementById('promptA');
 const promptBEl = document.getElementById('promptB');
+const promptBWrap = document.getElementById('promptBWrap');
+const promptGrid = document.getElementById('promptGrid');
+const promptALabel = document.getElementById('promptALabel');
+const setupHeading = document.getElementById('setupHeading');
+const headerLede = document.getElementById('headerLede');
+const resultsEmptyCopy = document.getElementById('resultsEmptyCopy');
+const enableCompareBtn = document.getElementById('enableCompareBtn');
+const disableCompareBtn = document.getElementById('disableCompareBtn');
 const casesListEl = document.getElementById('casesList');
 const casesSummaryMeta = document.getElementById('casesSummaryMeta');
 const addCaseBtn = document.getElementById('addCaseBtn');
@@ -26,8 +34,15 @@ const MAX_RUNS = 5;
 const MIN_CASES = 1;
 const MAX_CASES = 5;
 
+const DEFAULT_PROMPT_A =
+  'Answer with only the capital city of the country named below. No punctuation.';
+const DEFAULT_PROMPT_B =
+  'What is the capital of the following country? Reply in a full sentence.';
+
 /** @type {Array<{ id: string, input: string, expectedAnswer: string }>} */
 let cases = [];
+/** Whether Prompt B is active for A vs B comparison. */
+let compareMode = false;
 
 function clampRuns(value) {
   const n = Number.parseInt(String(value ?? ''), 10);
@@ -44,9 +59,31 @@ function updateCasesSummary() {
   casesSummaryMeta.textContent = `${n} case${n === 1 ? '' : 's'}`;
 }
 
+function syncCompareModeUi() {
+  promptBWrap.hidden = !compareMode;
+  enableCompareBtn.hidden = compareMode;
+  disableCompareBtn.hidden = !compareMode;
+  promptGrid.classList.toggle('eval-prompt-grid--single', !compareMode);
+  promptGrid.classList.toggle('eval-prompt-grid--compare', compareMode);
+
+  setupHeading.textContent = compareMode ? 'Prompts' : 'Prompt';
+  promptALabel.textContent = compareMode ? 'Prompt A' : 'Prompt';
+  runBtn.textContent = compareMode ? 'Compare prompts' : 'Run evaluation';
+
+  headerLede.textContent = compareMode
+    ? 'Compare two prompt versions. Each test question is appended under both prompts so the comparison is fair.'
+    : 'Run a prompt across test cases. Each question is appended under your prompt and scored the same way every run.';
+
+  resultsEmptyCopy.textContent = compareMode
+    ? 'Run a comparison to see which prompt scores higher — then open details if you want to inspect cases and runs.'
+    : 'Run an evaluation to see scores across cases — then open details if you want to inspect individual runs.';
+}
+
 function setBusy(busy) {
   runBtn.disabled = busy;
   addCaseBtn.disabled = busy || cases.length >= MAX_CASES;
+  enableCompareBtn.disabled = busy;
+  disableCompareBtn.disabled = busy;
   promptAEl.readOnly = busy;
   promptBEl.readOnly = busy;
   metricSelectEl.disabled = busy;
@@ -59,7 +96,9 @@ function setBusy(busy) {
     }
   });
   statusText.textContent = busy
-    ? 'Comparing prompts on independent Octavus sessions…'
+    ? (compareMode
+      ? 'Comparing prompts on independent Octavus sessions…'
+      : 'Running evaluation on independent Octavus sessions…')
     : '';
 }
 
@@ -86,6 +125,10 @@ function formatScore(score) {
   return score.toFixed(2);
 }
 
+function isMultiPrompt(data) {
+  return (data?.prompts?.length ?? 0) > 1;
+}
+
 function syncCasesFromDom() {
   const cards = [...casesListEl.querySelectorAll('.eval-case')];
   cases = cards.map((card) => ({
@@ -110,7 +153,7 @@ function renderCases() {
           >Remove</button>
         </div>
         <label class="eval-field">
-          <span class="body-xxsmall eval-field__label">Input</span>
+          <span class="body-xxsmall eval-field__label">Question</span>
           <textarea class="input" data-field="input" rows="2" spellcheck="false">${escapeHtml(c.input)}</textarea>
         </label>
         <label class="eval-field">
@@ -158,10 +201,32 @@ function renderRunList(results) {
 
 function renderVerdict(data) {
   const { comparison, prompts, conditions } = data;
+  const multi = isMultiPrompt(data);
   const byId = Object.fromEntries(prompts.map((p) => [p.id, p]));
   const meanA = formatScore(comparison.means.A);
   const meanB = formatScore(comparison.means.B);
   const caseNote = `${conditions.caseCount} case${conditions.caseCount === 1 ? '' : 's'}`;
+  const hasScores = prompts.some((p) => p.aggregate);
+
+  if (!multi) {
+    verdictBanner.className = 'eval-verdict eval-verdict--neutral';
+    if (!hasScores) {
+      verdictBanner.innerHTML = `
+        <p class="body-small eval-verdict__title"><strong>Not scored yet</strong></p>
+        <p class="body-xxsmall eval-verdict__detail">
+          Add expected answers to your test cases to see mean scores across ${caseNote}.
+        </p>
+      `;
+      return;
+    }
+    verdictBanner.innerHTML = `
+      <p class="body-small eval-verdict__title"><strong>Evaluation complete</strong></p>
+      <p class="body-xxsmall eval-verdict__detail">
+        Overall mean ${meanA} across ${caseNote}. Open case details below to inspect runs.
+      </p>
+    `;
+    return;
+  }
 
   if (comparison.outcome === 'unscored') {
     verdictBanner.className = 'eval-verdict eval-verdict--neutral';
@@ -199,9 +264,10 @@ function renderVerdict(data) {
 }
 
 function renderOverallCards(data) {
+  const multi = isMultiPrompt(data);
   overallGrid.innerHTML = data.prompts
     .map((prompt) => {
-      const isWinner = data.comparison.winnerId === prompt.id;
+      const isWinner = multi && data.comparison.winnerId === prompt.id;
       const mean = formatScore(prompt.aggregate?.mean);
       return `
         <article class="eval-summary-card ${isWinner ? 'eval-summary-card--winner' : ''}">
@@ -219,18 +285,24 @@ function renderOverallCards(data) {
     .join('');
 }
 
-function renderCaseBlock(testCase) {
+function renderCaseBlock(testCase, multi) {
   const meanA = formatScore(testCase.comparison.means.A);
   const meanB = formatScore(testCase.comparison.means.B);
   let caseVerdict = 'Not scored';
-  if (testCase.comparison.outcome === 'tie') caseVerdict = 'Tie';
-  if (testCase.comparison.outcome === 'winner') {
+  if (!multi) {
+    const only = testCase.prompts[0];
+    caseVerdict = only?.aggregate
+      ? `Mean ${formatScore(only.aggregate.mean)}`
+      : 'Not scored';
+  } else if (testCase.comparison.outcome === 'tie') {
+    caseVerdict = 'Tie';
+  } else if (testCase.comparison.outcome === 'winner') {
     caseVerdict = `Prompt ${testCase.comparison.winnerId} higher`;
   }
 
   const cols = testCase.prompts
     .map((prompt) => {
-      const isWinner = testCase.comparison.winnerId === prompt.id;
+      const isWinner = multi && testCase.comparison.winnerId === prompt.id;
       const mean = formatScore(prompt.aggregate?.mean);
       const runCount = prompt.results?.length ?? 0;
       return `
@@ -252,18 +324,21 @@ function renderCaseBlock(testCase) {
     })
     .join('');
 
+  const meanLine = multi && (meanA != null || meanB != null)
+    ? ` · A ${meanA ?? '—'} / B ${meanB ?? '—'}`
+    : '';
+
   return `
     <section class="eval-case-result">
       <header class="eval-case-result__header">
         <div>
           <h3 class="heading-xsmall">${escapeHtml(testCase.label)}</h3>
           <p class="body-xxsmall eval-case-result__meta">
-            ${escapeHtml(testCase.input || '(empty input)')}
+            ${escapeHtml(testCase.input || '(empty question)')}
           </p>
         </div>
         <p class="body-xsmall eval-case-result__verdict">
-          ${escapeHtml(caseVerdict)}
-          ${meanA != null || meanB != null ? ` · A ${meanA ?? '—'} / B ${meanB ?? '—'}` : ''}
+          ${escapeHtml(caseVerdict)}${meanLine}
         </p>
       </header>
       <div class="eval-compare-grid">${cols}</div>
@@ -277,16 +352,18 @@ function renderComparison(data) {
   resultsMeta.hidden = false;
   caseDetailsPanel.open = false;
 
+  const multi = isMultiPrompt(data);
   const { runs, caseCount } = data.conditions;
   resultsMeta.textContent =
-    `${caseCount} case${caseCount === 1 ? '' : 's'} · ${runs} run${runs === 1 ? '' : 's'} each`;
+    `${caseCount} case${caseCount === 1 ? '' : 's'} · ${runs} run${runs === 1 ? '' : 's'} each`
+    + (multi ? ' · A vs B' : '');
 
   renderVerdict(data);
   renderOverallCards(data);
-  caseResultsEl.innerHTML = data.cases.map(renderCaseBlock).join('');
+  caseResultsEl.innerHTML = data.cases.map((c) => renderCaseBlock(c, multi)).join('');
 }
 
-async function runComparison() {
+async function runEvaluation() {
   showError('');
   syncCasesFromDom();
 
@@ -297,10 +374,10 @@ async function runComparison() {
   runCountEl.value = String(runs);
 
   if (!promptA.trim()) {
-    showError('Enter Prompt A before comparing.');
+    showError(compareMode ? 'Enter Prompt A before comparing.' : 'Enter a prompt before running.');
     return;
   }
-  if (!promptB.trim()) {
+  if (compareMode && !promptB.trim()) {
     showError('Enter Prompt B before comparing.');
     return;
   }
@@ -309,27 +386,29 @@ async function runComparison() {
     return;
   }
   if (cases.every((c) => !c.input.trim() && !c.expectedAnswer.trim())) {
-    showError('Fill in at least one case input before comparing.');
+    showError('Fill in at least one case question before running.');
     return;
   }
+
+  const body = {
+    promptA,
+    cases: cases.map((c, i) => ({
+      id: c.id,
+      label: `Case ${i + 1}`,
+      input: c.input,
+      expectedAnswer: c.expectedAnswer,
+    })),
+    runs,
+    metricId,
+  };
+  if (compareMode) body.promptB = promptB;
 
   setBusy(true);
   try {
     const res = await fetch('/api/eval/compare', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        promptA,
-        promptB,
-        cases: cases.map((c, i) => ({
-          id: c.id,
-          label: `Case ${i + 1}`,
-          input: c.input,
-          expectedAnswer: c.expectedAnswer,
-        })),
-        runs,
-        metricId,
-      }),
+      body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -338,13 +417,26 @@ async function runComparison() {
     renderComparison(data);
     statusText.textContent = 'Done.';
   } catch (err) {
-    console.error('[eval] Compare failed:', err);
-    showError(err?.message || 'Failed to compare prompts');
+    console.error('[eval] Run failed:', err);
+    showError(err?.message || (compareMode ? 'Failed to compare prompts' : 'Failed to run evaluation'));
     statusText.textContent = '';
   } finally {
     setBusy(false);
   }
 }
+
+enableCompareBtn.addEventListener('click', () => {
+  compareMode = true;
+  if (!promptBEl.value.trim()) {
+    promptBEl.value = DEFAULT_PROMPT_B;
+  }
+  syncCompareModeUi();
+});
+
+disableCompareBtn.addEventListener('click', () => {
+  compareMode = false;
+  syncCompareModeUi();
+});
 
 addCaseBtn.addEventListener('click', () => {
   syncCasesFromDom();
@@ -363,7 +455,7 @@ casesListEl.addEventListener('click', (event) => {
 });
 
 runBtn.addEventListener('click', () => {
-  void runComparison();
+  void runEvaluation();
 });
 
 runCountEl.addEventListener('change', () => {
@@ -371,16 +463,11 @@ runCountEl.addEventListener('change', () => {
 });
 
 if (!promptAEl.value) {
-  promptAEl.value =
-    'Answer with only the capital city of the country named below. No punctuation.\n\n{{input}}';
-}
-if (!promptBEl.value) {
-  promptBEl.value =
-    'What is the capital of the following country? Reply in a full sentence.\n\n{{input}}';
+  promptAEl.value = DEFAULT_PROMPT_A;
 }
 
-// Start with one case so setup stays calm; learners can add more.
 cases = [
   { id: newCaseId(), input: 'France', expectedAnswer: 'Paris' },
 ];
 renderCases();
+syncCompareModeUi();

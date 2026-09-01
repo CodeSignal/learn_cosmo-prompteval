@@ -159,11 +159,34 @@ describe('runPromptComparison', () => {
     expect(result.comparison.winnerId).toBe('A');
   });
 
-  it('rejects fewer than two prompts', async () => {
+  it('supports a single prompt evaluation', async () => {
+    const runBatch = vi
+      .fn()
+      .mockResolvedValueOnce(mockBatch({ renderedPrompt: 'A: France', mean: 1, output: 'Paris', score: 1 }));
+
+    const result = await runPromptComparison(
+      { baseUrl: 'x', agentId: 'y', octavus: { agentSessions: { attach: vi.fn() } } },
+      {
+        prompts: [{ id: 'A', label: 'Prompt', promptTemplate: 'A: {{input}}' }],
+        input: 'France',
+        expectedAnswer: 'Paris',
+        metricId: 'exact-match',
+        runs: 1,
+        runBatch,
+      },
+    );
+
+    expect(runBatch).toHaveBeenCalledTimes(1);
+    expect(result.prompts).toHaveLength(1);
+    expect(result.prompts[0].aggregate.mean).toBe(1);
+    expect(result.comparison.outcome).toBe('unscored');
+  });
+
+  it('rejects an empty prompts list', async () => {
     await expect(
       runPromptComparison(
         { baseUrl: 'x', agentId: 'y', octavus: { agentSessions: { attach: vi.fn() } } },
-        { prompts: [{ id: 'A', promptTemplate: 'x' }], runBatch: vi.fn() },
+        { prompts: [], runBatch: vi.fn() },
       ),
     ).rejects.toMatchObject({ code: 'NEED_PROMPTS' });
   });

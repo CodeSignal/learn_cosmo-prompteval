@@ -29,37 +29,48 @@
           <h1 class="heading-small">Prompt Evaluation Simulator</h1>
         </div>
       </div>
-      <p class="body-small eval-header__lede">
-        Compare two prompt versions. Use <code>{{input}}</code> in a template to insert each test case.
+      <p class="body-small eval-header__lede" id="headerLede">
+        Run a prompt across test cases. Each question is appended under your prompt and scored the same way every run.
       </p>
     </header>
 
     <main class="eval-stack">
       <section class="eval-panel box card non-interactive" aria-labelledby="setupHeading">
-        <h2 class="heading-xsmall" id="setupHeading">Prompts</h2>
+        <h2 class="heading-xsmall" id="setupHeading">Prompt</h2>
 
-        <div class="eval-prompt-grid">
+        <div class="eval-prompt-grid eval-prompt-grid--single" id="promptGrid">
           <label class="eval-field">
-            <span class="body-xsmall eval-field__label">Prompt A</span>
+            <span class="body-xsmall eval-field__label" id="promptALabel">Prompt</span>
             <textarea
               class="input"
               id="promptA"
               rows="5"
-              placeholder="Prompt template A…&#10;&#10;{{input}}"
+              placeholder="Write the instructions you want to evaluate…"
               spellcheck="false"
             ></textarea>
           </label>
 
-          <label class="eval-field">
-            <span class="body-xsmall eval-field__label">Prompt B</span>
-            <textarea
-              class="input"
-              id="promptB"
-              rows="5"
-              placeholder="Prompt template B…&#10;&#10;{{input}}"
-              spellcheck="false"
-            ></textarea>
-          </label>
+          <div class="eval-prompt-b" id="promptBWrap" hidden>
+            <label class="eval-field">
+              <span class="body-xsmall eval-field__label">Prompt B</span>
+              <textarea
+                class="input"
+                id="promptB"
+                rows="5"
+                placeholder="Write an alternate prompt to compare…"
+                spellcheck="false"
+              ></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="eval-compare-toggle" id="compareToggleRow">
+          <button type="button" class="button button-secondary" id="enableCompareBtn">
+            Compare with another prompt
+          </button>
+          <button type="button" class="button button-tertiary" id="disableCompareBtn" hidden>
+            Use one prompt
+          </button>
         </div>
 
         <div class="eval-controls-row">
@@ -94,7 +105,7 @@
           </summary>
           <div class="eval-details__body">
             <p class="body-xxsmall eval-details__hint">
-              Each case has an input and an optional expected answer for scoring.
+              Each case has a question (appended under the prompt) and an optional expected answer for scoring.
             </p>
             <div class="eval-cases" id="casesList"></div>
             <button type="button" class="button button-secondary" id="addCaseBtn">Add case</button>
@@ -102,7 +113,7 @@
         </details>
 
         <div class="eval-actions">
-          <button type="button" class="button button-primary" id="runBtn">Compare prompts</button>
+          <button type="button" class="button button-primary" id="runBtn">Run evaluation</button>
           <p class="body-xxsmall eval-status" id="statusText" role="status" aria-live="polite"></p>
         </div>
 
@@ -118,8 +129,8 @@
         <div class="eval-results-empty" id="resultsEmpty">
           <span class="cosmo-avatar large" aria-hidden="true"></span>
           <p class="heading-xsmall empty-state__heading">Ready when you are</p>
-          <p class="body-small">
-            Run a comparison to see which prompt scores higher — then open details if you want to inspect cases and runs.
+          <p class="body-small" id="resultsEmptyCopy">
+            Run an evaluation to see scores across cases — then open details if you want to inspect individual runs.
           </p>
         </div>
 

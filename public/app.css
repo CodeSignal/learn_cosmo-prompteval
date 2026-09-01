@@ -128,9 +128,20 @@ code {
 }
 
 @media (min-width: 800px) {
-  .eval-prompt-grid {
+  .eval-prompt-grid--compare {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
+}
+
+.eval-prompt-b {
+  min-width: 0;
+}
+
+.eval-compare-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--UI-Spacing-spacing-s, 12px);
+  align-items: center;
 }
 
 .eval-field {

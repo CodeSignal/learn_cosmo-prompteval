@@ -455,8 +455,8 @@ app.post('/api/eval/run', async (req, res) => {
 });
 
 // ── POST /api/eval/compare ────────────────────────────────────
-// Compare Prompt A vs Prompt B under identical conditions across one or more
-// test cases. Each run still uses a fresh session.
+// Evaluate Prompt A across cases; optionally compare with Prompt B under
+// identical conditions. Each run still uses a fresh session.
 app.post('/api/eval/compare', async (req, res) => {
   if (!AGENT_ID) {
     return res.status(503).json({ error: 'OCTAVUS_AGENT_ID is not configured' });
@@ -475,8 +475,8 @@ app.post('/api/eval/compare', async (req, res) => {
   if (typeof promptA !== 'string') {
     return res.status(400).json({ error: 'promptA (string) is required' });
   }
-  if (typeof promptB !== 'string') {
-    return res.status(400).json({ error: 'promptB (string) is required' });
+  if (promptB !== undefined && promptB !== null && typeof promptB !== 'string') {
+    return res.status(400).json({ error: 'promptB must be a string when provided' });
   }
   if (cases !== undefined) {
     if (!Array.isArray(cases)) {
@@ -518,8 +518,14 @@ app.post('/api/eval/compare', async (req, res) => {
       },
       {
         prompts: [
-          { id: 'A', label: 'Prompt A', promptTemplate: promptA },
-          { id: 'B', label: 'Prompt B', promptTemplate: promptB },
+          {
+            id: 'A',
+            label: typeof promptB === 'string' && promptB.trim() !== '' ? 'Prompt A' : 'Prompt',
+            promptTemplate: promptA,
+          },
+          ...(typeof promptB === 'string' && promptB.trim() !== ''
+            ? [{ id: 'B', label: 'Prompt B', promptTemplate: promptB }]
+            : []),
         ],
         cases: Array.isArray(cases) ? cases : undefined,
         input: typeof input === 'string' ? input : '',

@@ -544,4 +544,29 @@ describe('POST /api/eval/compare', () => {
     expect(opts.cases).toHaveLength(2);
     expect(opts.runs).toBe(2);
   });
+
+  it('accepts a single prompt when promptB is omitted', async () => {
+    runPromptComparison.mockResolvedValue({
+      conditions: { metricId: 'exact-match', runs: 1, caseCount: 1 },
+      cases: [],
+      prompts: [
+        { id: 'A', label: 'Prompt', aggregate: { mean: 1, min: 1, max: 1, count: 1 }, caseSummaries: [] },
+      ],
+      comparison: { outcome: 'unscored', winnerId: null, means: { A: 1 } },
+    });
+
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({
+        promptA: 'Answer briefly.',
+        cases: [{ input: 'France', expectedAnswer: 'Paris' }],
+        runs: 1,
+      });
+
+    expect(res.status).toBe(200);
+    const [, opts] = runPromptComparison.mock.calls[0];
+    expect(opts.prompts).toEqual([
+      { id: 'A', label: 'Prompt', promptTemplate: 'Answer briefly.' },
+    ]);
+  });
 });
