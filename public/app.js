@@ -1,11 +1,12 @@
 /**
- * Prompt Evaluation Simulator – client (milestone 4: multi-case A vs B).
- * Posts to /api/eval/compare with prompts + cases[].
+ * Prompt Evaluation Simulator – client.
+ * Progressive disclosure: summary results first; case/run detail on demand.
  */
 
 const promptAEl = document.getElementById('promptA');
 const promptBEl = document.getElementById('promptB');
 const casesListEl = document.getElementById('casesList');
+const casesSummaryMeta = document.getElementById('casesSummaryMeta');
 const addCaseBtn = document.getElementById('addCaseBtn');
 const metricSelectEl = document.getElementById('metricSelect');
 const runCountEl = document.getElementById('runCount');
@@ -18,6 +19,7 @@ const comparisonBody = document.getElementById('comparisonBody');
 const verdictBanner = document.getElementById('verdictBanner');
 const overallGrid = document.getElementById('overallGrid');
 const caseResultsEl = document.getElementById('caseResults');
+const caseDetailsPanel = document.getElementById('caseDetailsPanel');
 
 const MIN_RUNS = 1;
 const MAX_RUNS = 5;
@@ -29,12 +31,17 @@ let cases = [];
 
 function clampRuns(value) {
   const n = Number.parseInt(String(value ?? ''), 10);
-  if (!Number.isFinite(n)) return 2;
+  if (!Number.isFinite(n)) return 3;
   return Math.min(MAX_RUNS, Math.max(MIN_RUNS, n));
 }
 
 function newCaseId() {
   return `case-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function updateCasesSummary() {
+  const n = cases.length;
+  casesSummaryMeta.textContent = `${n} case${n === 1 ? '' : 's'}`;
 }
 
 function setBusy(busy) {
@@ -46,10 +53,13 @@ function setBusy(busy) {
   runCountEl.readOnly = busy;
   casesListEl.querySelectorAll('textarea, button').forEach((el) => {
     if (el.tagName === 'TEXTAREA') el.readOnly = busy;
-    else el.disabled = busy || (el.classList.contains('eval-case__remove') && cases.length <= MIN_CASES);
+    else {
+      el.disabled = busy
+        || (el.classList.contains('eval-case__remove') && cases.length <= MIN_CASES);
+    }
   });
   statusText.textContent = busy
-    ? 'Running Prompt A and Prompt B across test cases on independent Octavus sessions…'
+    ? 'Comparing prompts on independent Octavus sessions…'
     : '';
 }
 
@@ -83,6 +93,7 @@ function syncCasesFromDom() {
     input: card.querySelector('[data-field="input"]')?.value ?? '',
     expectedAnswer: card.querySelector('[data-field="expected"]')?.value ?? '',
   }));
+  updateCasesSummary();
 }
 
 function renderCases() {
@@ -111,6 +122,7 @@ function renderCases() {
     .join('');
 
   addCaseBtn.disabled = cases.length >= MAX_CASES;
+  updateCasesSummary();
 }
 
 function renderRunList(results) {
@@ -135,7 +147,6 @@ function renderRunList(results) {
                 ${tag}
                 ${scoreHtml}
               </div>
-              <span class="body-xxsmall eval-result__session">session ${escapeHtml(result.sessionId)}</span>
             </div>
             <pre class="eval-result__output body-small">${escapeHtml(body)}</pre>
           </li>
@@ -155,9 +166,9 @@ function renderVerdict(data) {
   if (comparison.outcome === 'unscored') {
     verdictBanner.className = 'eval-verdict eval-verdict--neutral';
     verdictBanner.innerHTML = `
-      <p class="body-small eval-verdict__title"><strong>No overall winner yet</strong></p>
+      <p class="body-small eval-verdict__title"><strong>No scored winner yet</strong></p>
       <p class="body-xxsmall eval-verdict__detail">
-        Add expected answers on your cases to score prompts across ${caseNote}.
+        Add expected answers to your test cases to compare mean scores across ${caseNote}.
       </p>
     `;
     return;
@@ -166,10 +177,9 @@ function renderVerdict(data) {
   if (comparison.outcome === 'tie') {
     verdictBanner.className = 'eval-verdict eval-verdict--tie';
     verdictBanner.innerHTML = `
-      <p class="body-small eval-verdict__title"><strong>Tie</strong> — same overall mean</p>
+      <p class="body-small eval-verdict__title"><strong>Tie</strong></p>
       <p class="body-xxsmall eval-verdict__detail">
-        Prompt A ${meanA} · Prompt B ${meanB} · across ${caseNote}
-        ${conditions.metricId ? ` · ${escapeHtml(conditions.metricId)}` : ''}
+        Both prompts have the same overall mean (${meanA}) across ${caseNote}.
       </p>
     `;
     return;
@@ -179,12 +189,11 @@ function renderVerdict(data) {
   verdictBanner.className = 'eval-verdict eval-verdict--winner';
   verdictBanner.innerHTML = `
     <p class="body-small eval-verdict__title">
-      <strong>${escapeHtml(winner?.label || `Prompt ${comparison.winnerId}`)} wins overall</strong>
+      <strong>${escapeHtml(winner?.label || `Prompt ${comparison.winnerId}`)} wins</strong>
     </p>
     <p class="body-xxsmall eval-verdict__detail">
-      Prompt A mean ${meanA} · Prompt B mean ${meanB} · across ${caseNote}
-      ${conditions.metricId ? ` · ${escapeHtml(conditions.metricId)}` : ''}
-      · check per-case results for consistency
+      Overall mean — A ${meanA} · B ${meanB} · across ${caseNote}.
+      Open case details below to check consistency.
     </p>
   `;
 }
@@ -194,27 +203,16 @@ function renderOverallCards(data) {
     .map((prompt) => {
       const isWinner = data.comparison.winnerId === prompt.id;
       const mean = formatScore(prompt.aggregate?.mean);
-      const min = formatScore(prompt.aggregate?.min);
-      const max = formatScore(prompt.aggregate?.max);
-      const caseLines = (prompt.caseSummaries || [])
-        .map((cs) => {
-          const m = formatScore(cs.mean);
-          return `<li class="body-xxsmall">${escapeHtml(cs.caseLabel)}: ${m ?? '—'}</li>`;
-        })
-        .join('');
       return `
-        <article class="eval-prompt-col ${isWinner ? 'eval-prompt-col--winner' : ''}">
-          <header class="eval-prompt-col__header">
-            <h3 class="heading-xsmall">${escapeHtml(prompt.label)} · overall</h3>
-            ${isWinner ? '<span class="tag success">Higher mean</span>' : ''}
-          </header>
-          <div class="eval-prompt-summary">
-            <p class="heading-xsmall eval-prompt-summary__mean">
-              ${prompt.aggregate ? `Mean ${mean}` : 'Not scored'}
-            </p>
-            ${prompt.aggregate ? `<p class="body-xxsmall eval-prompt-summary__range">min ${min} · max ${max}</p>` : ''}
-          </div>
-          <ul class="eval-case-mean-list">${caseLines}</ul>
+        <article class="eval-summary-card ${isWinner ? 'eval-summary-card--winner' : ''}">
+          <p class="body-xsmall eval-summary-card__label">${escapeHtml(prompt.label)}</p>
+          <p class="heading-small eval-summary-card__mean">
+            ${prompt.aggregate ? mean : '—'}
+          </p>
+          <p class="body-xxsmall eval-summary-card__caption">
+            ${prompt.aggregate ? 'overall mean' : 'not scored'}
+            ${isWinner ? ' · higher' : ''}
+          </p>
         </article>
       `;
     })
@@ -227,25 +225,28 @@ function renderCaseBlock(testCase) {
   let caseVerdict = 'Not scored';
   if (testCase.comparison.outcome === 'tie') caseVerdict = 'Tie';
   if (testCase.comparison.outcome === 'winner') {
-    caseVerdict = `Prompt ${testCase.comparison.winnerId} wins`;
+    caseVerdict = `Prompt ${testCase.comparison.winnerId} higher`;
   }
 
   const cols = testCase.prompts
     .map((prompt) => {
       const isWinner = testCase.comparison.winnerId === prompt.id;
       const mean = formatScore(prompt.aggregate?.mean);
+      const runCount = prompt.results?.length ?? 0;
       return `
         <article class="eval-prompt-col ${isWinner ? 'eval-prompt-col--winner' : ''}">
           <header class="eval-prompt-col__header">
             <h4 class="body-xsmall">${escapeHtml(prompt.label)}</h4>
-            ${isWinner ? '<span class="tag success">Higher mean</span>' : ''}
+            <span class="body-xsmall">${prompt.aggregate ? `Mean ${mean}` : '—'}</span>
           </header>
-          <div class="eval-prompt-summary">
-            <p class="body-xsmall eval-prompt-summary__mean">
-              ${prompt.aggregate ? `Mean ${mean}` : 'Not scored'}
-            </p>
-          </div>
-          ${renderRunList(prompt.results)}
+          <details class="eval-details eval-details--nested">
+            <summary class="eval-details__summary eval-details__summary--compact">
+              <span class="body-xxsmall">Show ${runCount} run${runCount === 1 ? '' : 's'}</span>
+            </summary>
+            <div class="eval-details__body">
+              ${renderRunList(prompt.results)}
+            </div>
+          </details>
         </article>
       `;
     })
@@ -257,8 +258,7 @@ function renderCaseBlock(testCase) {
         <div>
           <h3 class="heading-xsmall">${escapeHtml(testCase.label)}</h3>
           <p class="body-xxsmall eval-case-result__meta">
-            Input: ${escapeHtml(testCase.input || '(empty)')}
-            ${testCase.expectedAnswer != null ? ` · Expected: ${escapeHtml(testCase.expectedAnswer)}` : ''}
+            ${escapeHtml(testCase.input || '(empty input)')}
           </p>
         </div>
         <p class="body-xsmall eval-case-result__verdict">
@@ -275,10 +275,11 @@ function renderComparison(data) {
   resultsEmpty.hidden = true;
   comparisonBody.hidden = false;
   resultsMeta.hidden = false;
+  caseDetailsPanel.open = false;
 
   const { runs, caseCount } = data.conditions;
   resultsMeta.textContent =
-    `${caseCount} case${caseCount === 1 ? '' : 's'} · ${runs} run${runs === 1 ? '' : 's'} per prompt per case`;
+    `${caseCount} case${caseCount === 1 ? '' : 's'} · ${runs} run${runs === 1 ? '' : 's'} each`;
 
   renderVerdict(data);
   renderOverallCards(data);
@@ -308,7 +309,7 @@ async function runComparison() {
     return;
   }
   if (cases.every((c) => !c.input.trim() && !c.expectedAnswer.trim())) {
-    showError('Fill in at least one case input (or expected answer) before comparing.');
+    showError('Fill in at least one case input before comparing.');
     return;
   }
 
@@ -369,7 +370,6 @@ runCountEl.addEventListener('change', () => {
   runCountEl.value = String(clampRuns(runCountEl.value));
 });
 
-// Starters: strict vs verbose prompts; capitals across three countries.
 if (!promptAEl.value) {
   promptAEl.value =
     'Answer with only the capital city of the country named below. No punctuation.\n\n{{input}}';
@@ -379,9 +379,8 @@ if (!promptBEl.value) {
     'What is the capital of the following country? Reply in a full sentence.\n\n{{input}}';
 }
 
+// Start with one case so setup stays calm; learners can add more.
 cases = [
   { id: newCaseId(), input: 'France', expectedAnswer: 'Paris' },
-  { id: newCaseId(), input: 'Japan', expectedAnswer: 'Tokyo' },
-  { id: newCaseId(), input: 'Germany', expectedAnswer: 'Berlin' },
 ];
 renderCases();

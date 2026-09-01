@@ -30,14 +30,13 @@
         </div>
       </div>
       <p class="body-small eval-header__lede">
-        Compare two prompt templates across multiple test cases under the same metric and run count.
-        Each run uses a fresh Octavus session. Use <code>{{input}}</code> in either template.
+        Compare two prompt versions. Use <code>{{input}}</code> in a template to insert each test case.
       </p>
     </header>
 
     <main class="eval-stack">
       <section class="eval-panel box card non-interactive" aria-labelledby="setupHeading">
-        <h2 class="heading-xsmall" id="setupHeading">Setup</h2>
+        <h2 class="heading-xsmall" id="setupHeading">Prompts</h2>
 
         <div class="eval-prompt-grid">
           <label class="eval-field">
@@ -45,7 +44,7 @@
             <textarea
               class="input"
               id="promptA"
-              rows="6"
+              rows="5"
               placeholder="Prompt template A…&#10;&#10;{{input}}"
               spellcheck="false"
             ></textarea>
@@ -56,18 +55,12 @@
             <textarea
               class="input"
               id="promptB"
-              rows="6"
+              rows="5"
               placeholder="Prompt template B…&#10;&#10;{{input}}"
               spellcheck="false"
             ></textarea>
           </label>
         </div>
-
-        <div class="eval-cases-header">
-          <h3 class="body-xsmall eval-cases-title">Test cases <span class="eval-optional">(1–5)</span></h3>
-          <button type="button" class="button button-secondary" id="addCaseBtn">Add case</button>
-        </div>
-        <div class="eval-cases" id="casesList"></div>
 
         <div class="eval-controls-row">
           <label class="eval-field eval-field--metric">
@@ -88,11 +81,25 @@
               type="number"
               min="1"
               max="5"
-              value="2"
+              value="3"
               inputmode="numeric"
             />
           </label>
         </div>
+
+        <details class="eval-details" id="casesDetails" open>
+          <summary class="eval-details__summary">
+            <span class="body-xsmall eval-details__summary-title">Test cases</span>
+            <span class="body-xxsmall eval-details__summary-meta" id="casesSummaryMeta">1 case</span>
+          </summary>
+          <div class="eval-details__body">
+            <p class="body-xxsmall eval-details__hint">
+              Each case has an input and an optional expected answer for scoring.
+            </p>
+            <div class="eval-cases" id="casesList"></div>
+            <button type="button" class="button button-secondary" id="addCaseBtn">Add case</button>
+          </div>
+        </details>
 
         <div class="eval-actions">
           <button type="button" class="button button-primary" id="runBtn">Compare prompts</button>
@@ -104,7 +111,7 @@
 
       <section class="eval-panel box card non-interactive" aria-labelledby="resultsHeading">
         <div class="eval-results-header">
-          <h2 class="heading-xsmall" id="resultsHeading">Comparison results</h2>
+          <h2 class="heading-xsmall" id="resultsHeading">Results</h2>
           <p class="body-xxsmall eval-results-meta" id="resultsMeta" hidden></p>
         </div>
 
@@ -112,15 +119,23 @@
           <span class="cosmo-avatar large" aria-hidden="true"></span>
           <p class="heading-xsmall empty-state__heading">Ready when you are</p>
           <p class="body-small">
-            Compare prompts across several cases. Overall mean picks a winner; per-case scores show
-            whether that win is consistent.
+            Run a comparison to see which prompt scores higher — then open details if you want to inspect cases and runs.
           </p>
         </div>
 
         <div id="comparisonBody" hidden>
           <div class="eval-verdict" id="verdictBanner" role="status"></div>
           <div class="eval-overall-grid" id="overallGrid"></div>
-          <div class="eval-case-results" id="caseResults"></div>
+
+          <details class="eval-details" id="caseDetailsPanel">
+            <summary class="eval-details__summary">
+              <span class="body-xsmall eval-details__summary-title">Case details</span>
+              <span class="body-xxsmall eval-details__summary-meta">Optional — open to inspect consistency</span>
+            </summary>
+            <div class="eval-details__body">
+              <div class="eval-case-results" id="caseResults"></div>
+            </div>
+          </details>
         </div>
       </section>
     </main>
