@@ -491,6 +491,7 @@ describe('GET /api/eval/metrics', () => {
     expect(res.status).toBe(200);
     expect(res.body.defaultMetricId).toBe('exact-match');
     expect(res.body.metrics.map((m) => m.id)).toContain('string-similarity');
+    expect(res.body.metrics.map((m) => m.id)).toContain('word-overlap-f1');
   });
 });
 

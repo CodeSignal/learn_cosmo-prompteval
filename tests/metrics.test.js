@@ -10,13 +10,14 @@ import {
 import { levenshteinDistance } from '../lib/metrics/string-similarity.js';
 
 describe('metric registry', () => {
-  it('lists the four milestone-2 metrics', () => {
+  it('lists the registered metrics', () => {
     const ids = listMetrics().map((m) => m.id);
     expect(ids).toEqual([
       'exact-match',
       'exact-match-ci',
       'contains',
       'string-similarity',
+      'word-overlap-f1',
     ]);
     expect(DEFAULT_METRIC_ID).toBe('exact-match');
   });
@@ -80,6 +81,24 @@ describe('string-similarity', () => {
   it('exposes levenshteinDistance for unit checks', () => {
     expect(levenshteinDistance('kitten', 'sitting')).toBe(3);
     expect(levenshteinDistance('', 'abc')).toBe(3);
+  });
+});
+
+describe('word-overlap-f1', () => {
+  const metric = getMetric('word-overlap-f1');
+
+  it('scores 1 for the same words ignoring punctuation and case', () => {
+    expect(metric.score('Paris!', 'paris')).toBe(1);
+  });
+
+  it('scores between 0 and 1 when expected words appear in a longer answer', () => {
+    // output: [the, capital, is, paris] vs expected: [paris]
+    // precision 1/4, recall 1 → F1 = 0.4
+    expect(metric.score('The capital is Paris', 'Paris')).toBeCloseTo(0.4, 5);
+  });
+
+  it('scores 0 when there is no word overlap', () => {
+    expect(metric.score('London', 'Paris')).toBe(0);
   });
 });
 
