@@ -3,6 +3,11 @@
  * Single-prompt first; optional A vs B compare. Cases append under prompts.
  */
 
+import {
+  collectPromptScores,
+  summarizeDistribution,
+} from '../lib/score-distribution.js';
+
 const promptAEl = document.getElementById('promptA');
 const promptBEl = document.getElementById('promptB');
 const promptBWrap = document.getElementById('promptBWrap');
@@ -30,7 +35,7 @@ const caseResultsEl = document.getElementById('caseResults');
 const caseDetailsPanel = document.getElementById('caseDetailsPanel');
 
 const MIN_RUNS = 1;
-const MAX_RUNS = 5;
+const MAX_RUNS = 10;
 const MIN_CASES = 1;
 const MAX_CASES = 5;
 
@@ -46,7 +51,7 @@ let compareMode = false;
 
 function clampRuns(value) {
   const n = Number.parseInt(String(value ?? ''), 10);
-  if (!Number.isFinite(n)) return 3;
+  if (!Number.isFinite(n)) return 5;
   return Math.min(MAX_RUNS, Math.max(MIN_RUNS, n));
 }
 
@@ -222,7 +227,7 @@ function renderVerdict(data) {
     verdictBanner.innerHTML = `
       <p class="body-small eval-verdict__title"><strong>Evaluation complete</strong></p>
       <p class="body-xxsmall eval-verdict__detail">
-        Overall mean ${meanA} across ${caseNote}. Open case details below to inspect runs.
+        Overall mean ${meanA} across ${caseNote}. Check the score distribution below — a high mean can still hide unstable runs.
       </p>
     `;
     return;
@@ -258,8 +263,50 @@ function renderVerdict(data) {
     </p>
     <p class="body-xxsmall eval-verdict__detail">
       Overall mean — A ${meanA} · B ${meanB} · across ${caseNote}.
-      Open case details below to check consistency.
+      Compare the distributions below, then open case details for consistency.
     </p>
+  `;
+}
+
+function renderDistribution(scores) {
+  const { count, perfectCount, bins } = summarizeDistribution(scores);
+  if (!count) {
+    return `
+      <div class="eval-dist eval-dist--empty">
+        <p class="body-xxsmall eval-dist__caption">No scored runs yet</p>
+      </div>
+    `;
+  }
+
+  const max = Math.max(...bins, 1);
+  const bars = bins
+    .map((binCount, i) => {
+      const height = Math.max(8, Math.round((binCount / max) * 48));
+      return `
+        <div class="eval-dist__col">
+          <div
+            class="eval-dist__bar ${binCount === 0 ? 'eval-dist__bar--empty' : ''}"
+            style="height: ${height}px"
+            title="${binCount} score${binCount === 1 ? '' : 's'} in bin ${i + 1}"
+          ></div>
+          <span class="body-xxsmall eval-dist__count">${binCount === 0 ? '' : binCount}</span>
+        </div>
+      `;
+    })
+    .join('');
+
+  return `
+    <div class="eval-dist" aria-label="Score distribution across ${count} runs">
+      <div class="eval-dist__bars">${bars}</div>
+      <div class="eval-dist__axis body-xxsmall">
+        <span>0</span>
+        <span>1</span>
+      </div>
+      <p class="body-xxsmall eval-dist__caption">
+        ${count} score${count === 1 ? '' : 's'}
+        · ${perfectCount} perfect
+      </p>
+    </div>
   `;
 }
 
@@ -269,6 +316,7 @@ function renderOverallCards(data) {
     .map((prompt) => {
       const isWinner = multi && data.comparison.winnerId === prompt.id;
       const mean = formatScore(prompt.aggregate?.mean);
+      const scores = collectPromptScores(data.cases, prompt.id);
       return `
         <article class="eval-summary-card ${isWinner ? 'eval-summary-card--winner' : ''}">
           <p class="body-xsmall eval-summary-card__label">${escapeHtml(prompt.label)}</p>
@@ -279,6 +327,7 @@ function renderOverallCards(data) {
             ${prompt.aggregate ? 'overall mean' : 'not scored'}
             ${isWinner ? ' · higher' : ''}
           </p>
+          ${renderDistribution(scores)}
         </article>
       `;
     })
