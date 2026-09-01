@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   collectPromptScores,
+  collectPromptScoresByCase,
   binScores,
   summarizeDistribution,
 } from '../lib/score-distribution.js';
@@ -22,6 +23,27 @@ describe('collectPromptScores', () => {
     ];
     expect(collectPromptScores(cases, 'A')).toEqual([1, 0, 1]);
     expect(collectPromptScores(cases, 'B')).toEqual([0.5]);
+  });
+});
+
+describe('collectPromptScoresByCase', () => {
+  it('keeps scores grouped per case', () => {
+    const cases = [
+      {
+        id: 'c1',
+        label: 'Case 1',
+        prompts: [{ id: 'A', results: [{ score: 1 }, { score: 0 }] }],
+      },
+      {
+        id: 'c2',
+        label: 'Case 2',
+        prompts: [{ id: 'A', results: [{ score: 1 }] }],
+      },
+    ];
+    expect(collectPromptScoresByCase(cases, 'A')).toEqual([
+      { caseId: 'c1', caseLabel: 'Case 1', scores: [1, 0] },
+      { caseId: 'c2', caseLabel: 'Case 2', scores: [1] },
+    ]);
   });
 });
 

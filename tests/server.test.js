@@ -430,7 +430,7 @@ describe('POST /api/eval/run', () => {
   it('returns 400 when runs is out of range', async () => {
     const res = await request(app)
       .post('/api/eval/run')
-      .send({ promptTemplate: 'Hi {{input}}', input: 'there', runs: 11 });
+      .send({ promptTemplate: 'Hi {{input}}', input: 'there', runs: 9 });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/runs/);
     expect(runEvalBatch).not.toHaveBeenCalled();

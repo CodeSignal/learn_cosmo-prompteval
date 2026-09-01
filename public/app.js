@@ -3,10 +3,7 @@
  * Single-prompt first; optional A vs B compare. Cases append under prompts.
  */
 
-import {
-  collectPromptScores,
-  summarizeDistribution,
-} from '../lib/score-distribution.js';
+import { collectPromptScoresByCase } from '../lib/score-distribution.js';
 
 const promptAEl = document.getElementById('promptA');
 const promptBEl = document.getElementById('promptB');
@@ -35,7 +32,7 @@ const caseResultsEl = document.getElementById('caseResults');
 const caseDetailsPanel = document.getElementById('caseDetailsPanel');
 
 const MIN_RUNS = 1;
-const MAX_RUNS = 10;
+const MAX_RUNS = 5;
 const MIN_CASES = 1;
 const MAX_CASES = 5;
 
@@ -51,7 +48,7 @@ let compareMode = false;
 
 function clampRuns(value) {
   const n = Number.parseInt(String(value ?? ''), 10);
-  if (!Number.isFinite(n)) return 5;
+  if (!Number.isFinite(n)) return 2;
   return Math.min(MAX_RUNS, Math.max(MIN_RUNS, n));
 }
 
@@ -102,8 +99,8 @@ function setBusy(busy) {
   });
   statusText.textContent = busy
     ? (compareMode
-      ? 'Comparing prompts on independent Octavus sessions…'
-      : 'Running evaluation on independent Octavus sessions…')
+      ? 'Comparing prompts — each run is independent…'
+      : 'Running evaluation — each run is independent…')
     : '';
 }
 
@@ -268,9 +265,25 @@ function renderVerdict(data) {
   `;
 }
 
-function renderDistribution(scores) {
-  const { count, perfectCount, bins } = summarizeDistribution(scores);
-  if (!count) {
+function renderRunBars(scores, titlePrefix = 'Run') {
+  return scores
+    .map((score, i) => {
+      const clamped = Math.min(1, Math.max(0, score));
+      const height = Math.max(4, Math.round(clamped * 44));
+      const label = formatScore(score);
+      return `
+        <div class="eval-dist__col" title="${escapeHtml(titlePrefix)} ${i + 1}: ${label}">
+          <div class="eval-dist__bar" style="height: ${height}px"></div>
+          <span class="body-xxsmall eval-dist__count">${i + 1}</span>
+        </div>
+      `;
+    })
+    .join('');
+}
+
+function renderDistribution(groups) {
+  const allScores = groups.flatMap((g) => g.scores);
+  if (!allScores.length) {
     return `
       <div class="eval-dist eval-dist--empty">
         <p class="body-xxsmall eval-dist__caption">No scored runs yet</p>
@@ -278,33 +291,33 @@ function renderDistribution(scores) {
     `;
   }
 
-  const max = Math.max(...bins, 1);
-  const bars = bins
-    .map((binCount, i) => {
-      const height = Math.max(8, Math.round((binCount / max) * 48));
-      return `
-        <div class="eval-dist__col">
-          <div
-            class="eval-dist__bar ${binCount === 0 ? 'eval-dist__bar--empty' : ''}"
-            style="height: ${height}px"
-            title="${binCount} score${binCount === 1 ? '' : 's'} in bin ${i + 1}"
-          ></div>
-          <span class="body-xxsmall eval-dist__count">${binCount === 0 ? '' : binCount}</span>
+  const perfectCount = allScores.filter((s) => s === 1).length;
+  const multiCase = groups.length > 1;
+
+  const body = multiCase
+    ? groups.map((group) => `
+        <div class="eval-dist__group">
+          <p class="body-xxsmall eval-dist__group-label">${escapeHtml(group.caseLabel)}</p>
+          <div class="eval-dist__bars" style="--dist-count: ${group.scores.length}">
+            ${renderRunBars(group.scores, group.caseLabel)}
+          </div>
+        </div>
+      `).join('')
+    : `
+        <div class="eval-dist__bars" style="--dist-count: ${allScores.length}">
+          ${renderRunBars(allScores)}
         </div>
       `;
-    })
-    .join('');
 
   return `
-    <div class="eval-dist" aria-label="Score distribution across ${count} runs">
-      <div class="eval-dist__bars">${bars}</div>
-      <div class="eval-dist__axis body-xxsmall">
-        <span>0</span>
-        <span>1</span>
-      </div>
+    <div class="eval-dist" aria-label="Scores by run${multiCase ? ' and case' : ''}">
+      <p class="body-xxsmall eval-dist__heading">
+        ${multiCase ? 'Each bar is one run, grouped by case' : 'Each bar is one run'}
+      </p>
+      ${body}
       <p class="body-xxsmall eval-dist__caption">
-        ${count} score${count === 1 ? '' : 's'}
-        · ${perfectCount} perfect
+        ${perfectCount} of ${allScores.length} perfect (score 1)
+        ${multiCase ? ` · ${groups.length} cases` : ''}
       </p>
     </div>
   `;
@@ -316,7 +329,7 @@ function renderOverallCards(data) {
     .map((prompt) => {
       const isWinner = multi && data.comparison.winnerId === prompt.id;
       const mean = formatScore(prompt.aggregate?.mean);
-      const scores = collectPromptScores(data.cases, prompt.id);
+      const groups = collectPromptScoresByCase(data.cases, prompt.id);
       return `
         <article class="eval-summary-card ${isWinner ? 'eval-summary-card--winner' : ''}">
           <p class="body-xsmall eval-summary-card__label">${escapeHtml(prompt.label)}</p>
@@ -327,7 +340,7 @@ function renderOverallCards(data) {
             ${prompt.aggregate ? 'overall mean' : 'not scored'}
             ${isWinner ? ' · higher' : ''}
           </p>
-          ${renderDistribution(scores)}
+          ${renderDistribution(groups)}
         </article>
       `;
     })

@@ -10,7 +10,7 @@ import {
 } from '../lib/eval-run.js';
 
 describe('normalizeRunCount', () => {
-  it('clamps to 1–10', () => {
+  it('clamps to 1–5', () => {
     expect(normalizeRunCount(0)).toBe(MIN_EVAL_RUNS);
     expect(normalizeRunCount(99)).toBe(MAX_EVAL_RUNS);
     expect(normalizeRunCount('3')).toBe(3);
