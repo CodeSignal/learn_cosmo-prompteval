@@ -52,6 +52,34 @@ function getLlm() {
   return cachedLlm;
 }
 
+/**
+ * Resolve a provider for an eval route without letting createLlmProvider()
+ * throws escape Express 4 async handlers as unhandled rejections.
+ * @param {import('express').Response} res
+ * @returns {import('./lib/llm/types.js').LlmProvider | null}
+ */
+function resolveLlm(res) {
+  try {
+    const llm = getLlm();
+    if (!llm) {
+      res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured' });
+      return null;
+    }
+    return llm;
+  } catch (err) {
+    const message = err instanceof Error && err.message
+      ? err.message
+      : 'LLM provider is not configured';
+    res.status(503).json({ error: message });
+    return null;
+  }
+}
+
+/** Clear the cached provider. Used by tests when mocking createLlmProvider. */
+export function resetLlmCache() {
+  cachedLlm = undefined;
+}
+
 // ── Middleware ────────────────────────────────────────────────
 app.use(express.json());
 app.use('/design-system', express.static(path.join(__dirname, 'design-system')));
@@ -297,10 +325,8 @@ app.get('/api/eval/metrics', (_req, res) => {
 // Prompt Evaluation Simulator: render template + input, run independent
 // LLM completions, optionally score outputs against expectedAnswer.
 app.post('/api/eval/run', async (req, res) => {
-  const llm = getLlm();
-  if (!llm) {
-    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured' });
-  }
+  const llm = resolveLlm(res);
+  if (!llm) return;
 
   const { promptTemplate, input, runs, expectedAnswer, metricId } = req.body ?? {};
   if (typeof promptTemplate !== 'string') {
@@ -351,10 +377,8 @@ app.post('/api/eval/run', async (req, res) => {
 // Evaluate Prompt A across cases; optionally compare with Prompt B under
 // identical conditions. Each run is an independent LLM complete() call.
 app.post('/api/eval/compare', async (req, res) => {
-  const llm = getLlm();
-  if (!llm) {
-    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured' });
-  }
+  const llm = resolveLlm(res);
+  if (!llm) return;
 
   const {
     promptA,
