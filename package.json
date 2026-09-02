@@ -1,22 +1,20 @@
 {
   "name": "learn_cosmo-prompteval",
   "version": "1.0.0",
-  "description": "Prompt Evaluation Simulator – run prompts across independent Octavus sessions and score outputs",
+  "description": "Prompt Evaluation Simulator – run prompts across independent Claude API calls and score outputs",
   "type": "module",
   "main": "server.js",
   "scripts": {
     "build": "esbuild public/app.js --bundle --outfile=public/app.bundle.js --format=esm --platform=browser",
     "build:watch": "esbuild public/app.js --bundle --outfile=public/app.bundle.js --format=esm --platform=browser --watch",
     "start": "npm run build && node server.js",
-    "start:prod": "npm run build && cross-env AGENT_TARGET=prod node server.js",
-    "dev": "npm run build && concurrently -k -n client,server -c blue,green \"npm:build:watch\" \"cross-env AGENT_TARGET=dev node --watch server.js\"",
-    "validate:agent": "octavus --env .env validate ./agents/prompt-eval",
+    "start:prod": "npm run build && node server.js",
+    "dev": "npm run build && concurrently -k -n client,server -c blue,green \"npm:build:watch\" \"node --watch server.js\"",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@octavus/client-sdk": "^3.2.0",
-    "@octavus/server-sdk": "^3.2.0",
+    "@anthropic-ai/sdk": "^0.123.0",
     "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "highlight.js": "^11.11.1",
@@ -25,7 +23,6 @@
     "undici": "^8.10.0"
   },
   "devDependencies": {
-    "@octavus/cli": "^3.2.0",
     "concurrently": "^10.0.1",
     "cross-env": "^7.0.3",
     "esbuild": "^0.28.0",

@@ -1,12 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
-  collectAssistantText,
   normalizeRunCount,
   runEvalBatch,
   runSingleEval,
   MAX_EVAL_RUNS,
   MIN_EVAL_RUNS,
-  EVAL_TRIGGER_NAME,
 } from '../lib/eval-run.js';
 
 describe('normalizeRunCount', () => {
@@ -18,87 +16,44 @@ describe('normalizeRunCount', () => {
   });
 });
 
-describe('collectAssistantText', () => {
-  it('concatenates text-delta events', async () => {
-    async function* events() {
-      yield { type: 'start' };
-      yield { type: 'text-delta', delta: 'Hello' };
-      yield { type: 'text-delta', delta: ' world' };
-      yield { type: 'finish' };
-    }
-    await expect(collectAssistantText(events())).resolves.toEqual({
-      output: 'Hello world',
-      error: null,
-    });
-  });
-
-  it('captures stream errors', async () => {
-    async function* events() {
-      yield { type: 'text-delta', delta: 'partial' };
-      yield { type: 'error', message: 'boom' };
-    }
-    await expect(collectAssistantText(events())).resolves.toEqual({
-      output: 'partial',
-      error: 'boom',
-    });
-  });
-});
-
 describe('runSingleEval / runEvalBatch', () => {
   function makeDeps() {
-    const execute = vi.fn(async function* () {
-      yield { type: 'text-delta', delta: 'ok' };
-    });
-    const attach = vi.fn(() => ({ execute }));
-    const createSession = vi.fn()
-      .mockResolvedValueOnce('sess-1')
-      .mockResolvedValueOnce('sess-2')
-      .mockResolvedValueOnce('sess-3');
-
+    const complete = vi.fn().mockResolvedValue({ text: 'ok', requestId: 'req-1' });
     return {
       deps: {
-        baseUrl: 'https://example.test',
-        apiKey: 'key',
-        agentId: 'agent-eval',
-        octavus: { agentSessions: { attach } },
-        createSession,
+        llm: { name: 'anthropic', model: 'claude-sonnet-4-6', complete },
+        systemPrompt: 'You are being evaluated.',
       },
-      execute,
-      attach,
-      createSession,
+      complete,
     };
   }
 
-  it('creates a fresh session and fires run-prompt once', async () => {
-    const { deps, execute, attach, createSession } = makeDeps();
+  it('calls llm.complete once with the rendered prompt', async () => {
+    const { deps, complete } = makeDeps();
     const result = await runSingleEval(deps, {
       renderedPrompt: 'Say hi',
       run: 1,
     });
 
-    expect(createSession).toHaveBeenCalledWith({
-      baseUrl: 'https://example.test',
-      apiKey: 'key',
-      agentId: 'agent-eval',
-      input: {},
-    });
-    expect(attach).toHaveBeenCalledWith('sess-1');
-    expect(execute).toHaveBeenCalledWith({
-      type: 'trigger',
-      triggerName: EVAL_TRIGGER_NAME,
-      input: { PROMPT: 'Say hi' },
+    expect(complete).toHaveBeenCalledOnce();
+    expect(complete).toHaveBeenCalledWith({
+      model: 'claude-sonnet-4-6',
+      system: 'You are being evaluated.',
+      messages: [{ role: 'user', content: 'Say hi' }],
+      temperature: undefined,
     });
     expect(result).toMatchObject({
       run: 1,
-      sessionId: 'sess-1',
       output: 'ok',
       status: 'ok',
       error: null,
     });
+    expect(result.sessionId).toEqual(expect.any(String));
+    expect(result.sessionId.length).toBeGreaterThan(0);
   });
 
-  it('runs N independent sessions sequentially', async () => {
-    const { deps, createSession, attach } = makeDeps();
+  it('runs N independent completions sequentially', async () => {
+    const { deps, complete } = makeDeps();
     const batch = await runEvalBatch(deps, {
       promptTemplate: 'Echo: {{input}}',
       input: 'ping',
@@ -110,16 +65,13 @@ describe('runSingleEval / runEvalBatch', () => {
     expect(batch.results).toHaveLength(3);
     expect(batch.aggregate).toBeNull();
     expect(batch.metricId).toBeNull();
-    expect(createSession).toHaveBeenCalledTimes(3);
-    expect(attach.mock.calls.map((c) => c[0])).toEqual(['sess-1', 'sess-2', 'sess-3']);
+    expect(complete).toHaveBeenCalledTimes(3);
     expect(new Set(batch.results.map((r) => r.sessionId)).size).toBe(3);
   });
 
   it('scores outputs when expectedAnswer is provided', async () => {
-    const { deps, execute } = makeDeps();
-    execute.mockImplementation(async function* () {
-      yield { type: 'text-delta', delta: 'Paris' };
-    });
+    const { deps, complete } = makeDeps();
+    complete.mockResolvedValue({ text: 'Paris' });
 
     const batch = await runEvalBatch(deps, {
       promptTemplate: 'Capital of {{input}}?',
@@ -137,6 +89,24 @@ describe('runSingleEval / runEvalBatch', () => {
       min: 1,
       max: 1,
       count: 2,
+    });
+  });
+
+  it('records an error status when complete() rejects', async () => {
+    const { deps, complete } = makeDeps();
+    complete.mockRejectedValueOnce(new Error('rate limited'));
+
+    const result = await runSingleEval(deps, {
+      renderedPrompt: 'Say hi',
+      run: 1,
+    });
+
+    expect(result).toMatchObject({
+      run: 1,
+      output: '',
+      status: 'error',
+      error: 'rate limited',
+      score: null,
     });
   });
 
