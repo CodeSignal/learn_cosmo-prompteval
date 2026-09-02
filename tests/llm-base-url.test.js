@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { optionalHttpsBaseUrl } from '../lib/llm/base-url.js';
 import { createOpenAiProvider } from '../lib/llm/openai.js';
 import { createAnthropicProvider } from '../lib/llm/anthropic.js';
+import { createGeminiProvider } from '../lib/llm/gemini.js';
 
 describe('optionalHttpsBaseUrl', () => {
   it('returns undefined for absent or blank values', () => {
@@ -21,6 +22,27 @@ describe('optionalHttpsBaseUrl', () => {
     expect(() => optionalHttpsBaseUrl('not-a-url', 'ANTHROPIC_BASE_URL'))
       .toThrow(/ANTHROPIC_BASE_URL must be an https URL/);
   });
+
+  it('rejects HTTPS hosts outside an allowlist', () => {
+    expect(() => optionalHttpsBaseUrl(
+      'https://evil.example.test',
+      'GOOGLE_BASE_URL',
+      { allowedHosts: ['generativelanguage.googleapis.com'] },
+    )).toThrow(/GOOGLE_BASE_URL must be an approved HTTPS endpoint/);
+  });
+
+  it('accepts an allowlisted host and *-suffix pattern', () => {
+    expect(optionalHttpsBaseUrl(
+      'https://generativelanguage.googleapis.com',
+      'GOOGLE_BASE_URL',
+      { allowedHosts: ['generativelanguage.googleapis.com'] },
+    )).toBe('https://generativelanguage.googleapis.com');
+    expect(optionalHttpsBaseUrl(
+      'https://us-central1-aiplatform.googleapis.com',
+      'GOOGLE_BASE_URL',
+      { allowedHosts: ['*-aiplatform.googleapis.com'] },
+    )).toBe('https://us-central1-aiplatform.googleapis.com');
+  });
 });
 
 describe('provider base URL guards', () => {
@@ -36,5 +58,16 @@ describe('provider base URL guards', () => {
       ANTHROPIC_API_KEY: 'sk-test',
       ANTHROPIC_BASE_URL: 'http://localhost:8080',
     })).toThrow(/ANTHROPIC_BASE_URL must use HTTPS/);
+  });
+
+  it('rejects a non-HTTPS or unapproved GOOGLE_BASE_URL before constructing the client', () => {
+    expect(() => createGeminiProvider({
+      GOOGLE_API_KEY: 'sk-test',
+      GOOGLE_BASE_URL: 'http://localhost:8080',
+    })).toThrow(/GOOGLE_BASE_URL must use HTTPS/);
+    expect(() => createGeminiProvider({
+      GOOGLE_API_KEY: 'sk-test',
+      GOOGLE_BASE_URL: 'https://evil.example.test',
+    })).toThrow(/GOOGLE_BASE_URL must be an approved HTTPS endpoint/);
   });
 });

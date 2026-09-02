@@ -95,13 +95,13 @@ describe('createLlmProvider gemini', () => {
     const llm = createLlmProvider({
       LLM_PROVIDER: 'gemini',
       GOOGLE_API_KEY: 'sk-test',
-      GOOGLE_BASE_URL: 'https://generativelanguage.example.test',
+      GOOGLE_BASE_URL: 'https://generativelanguage.googleapis.com',
       GOOGLE_MODEL: 'google/gemini-2.5-flash',
     });
     expect(llm.model).toBe('gemini-2.5-flash');
     expect(constructorOpts).toHaveBeenCalledWith({
       apiKey: 'sk-test',
-      httpOptions: { baseUrl: 'https://generativelanguage.example.test' },
+      httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com' },
     });
 
     const result = await llm.complete({
@@ -113,7 +113,7 @@ describe('createLlmProvider gemini', () => {
 
     expect(result).toEqual({ text: 'Paris', requestId: 'resp-1' });
     expect(logSpy).toHaveBeenCalledWith(
-      '[llm] request {"provider":"gemini","model":"gemini-2.5-pro","baseURL":"https://generativelanguage.example.test","temperature":0.2,"messageCount":1}',
+      '[llm] request {"provider":"gemini","model":"gemini-2.5-pro","baseURL":"https://generativelanguage.googleapis.com","temperature":0.2,"messageCount":1}',
     );
     expect(generateContent).toHaveBeenCalledWith({
       model: 'gemini-2.5-pro',
@@ -134,14 +134,14 @@ describe('createLlmProvider gemini', () => {
     const llm = createLlmProvider({
       LLM_PROVIDER: 'gemini',
       GOOGLE_API_KEY: 'sk-test',
-      GOOGLE_BASE_URL: 'https://generativelanguage.example.test',
+      GOOGLE_BASE_URL: 'https://generativelanguage.googleapis.com',
     });
     await expect(llm.complete({
       model: 'gemini-2.5-flash',
       messages: [{ role: 'user', content: 'Hi' }],
     })).rejects.toBe(err);
     expect(errorSpy).toHaveBeenCalledWith(
-      '[llm] error {"provider":"gemini","model":"gemini-2.5-flash","message":"RESOURCE_EXHAUSTED","status":429,"code":429,"baseURL":"https://generativelanguage.example.test"}',
+      '[llm] error {"provider":"gemini","model":"gemini-2.5-flash","message":"RESOURCE_EXHAUSTED","status":429,"code":429,"baseURL":"https://generativelanguage.googleapis.com"}',
     );
     errorSpy.mockRestore();
   });
