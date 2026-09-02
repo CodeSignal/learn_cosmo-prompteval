@@ -7,4 +7,5 @@ public/hljs-*.css
 chat-sessions.json
 chat-config.json
 session.config.json
+eval-session.json
 .agent-build

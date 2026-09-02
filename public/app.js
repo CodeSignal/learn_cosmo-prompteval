@@ -3,6 +3,7 @@
  * Single-prompt first; optional A vs B compare. Cases append under prompts.
  */
 
+import { isRenderableResult, normalizeEvalSession } from '../lib/eval-session.js';
 import { collectPromptScoresByCase } from '../lib/score-distribution.js';
 import { FALLBACK_DEFAULTS, normalizeSessionConfig } from '../lib/session-config.js';
 
@@ -38,10 +39,15 @@ let MAX_RUNS = FALLBACK_DEFAULTS.maxRuns;
 let MIN_CASES = FALLBACK_DEFAULTS.minCases;
 let MAX_CASES = FALLBACK_DEFAULTS.maxCases;
 
-/** @type {Array<{ id: string, input: string, expectedAnswer: string }>} */
-let cases = [];
-/** Whether Prompt B is active for A vs B comparison. */
-let compareMode = false;
+/** @type {ReturnType<typeof normalizeEvalSession>} */
+let session = normalizeEvalSession({});
+let persistEnabled = false;
+let saveTimer = null;
+const SAVE_DEBOUNCE_MS = 300;
+
+function sessionLimits() {
+  return { minRuns: MIN_RUNS, maxRuns: MAX_RUNS, maxCases: MAX_CASES };
+}
 
 function clampRuns(value) {
   const n = Number.parseInt(String(value ?? ''), 10);
@@ -55,33 +61,33 @@ function newCaseId() {
 }
 
 function updateCasesSummary() {
-  const n = cases.length;
+  const n = session.cases.length;
   casesSummaryMeta.textContent = `${n} case${n === 1 ? '' : 's'}`;
 }
 
 function syncCompareModeUi() {
-  promptBWrap.hidden = !compareMode;
-  enableCompareBtn.hidden = compareMode;
-  disableCompareBtn.hidden = !compareMode;
-  promptGrid.classList.toggle('eval-prompt-grid--single', !compareMode);
-  promptGrid.classList.toggle('eval-prompt-grid--compare', compareMode);
+  promptBWrap.hidden = !session.compareMode;
+  enableCompareBtn.hidden = session.compareMode;
+  disableCompareBtn.hidden = !session.compareMode;
+  promptGrid.classList.toggle('eval-prompt-grid--single', !session.compareMode);
+  promptGrid.classList.toggle('eval-prompt-grid--compare', session.compareMode);
 
-  setupHeading.textContent = compareMode ? 'Prompts' : 'Prompt';
-  promptALabel.textContent = compareMode ? 'Prompt A' : 'Prompt';
-  runBtn.textContent = compareMode ? 'Compare prompts' : 'Run evaluation';
+  setupHeading.textContent = session.compareMode ? 'Prompts' : 'Prompt';
+  promptALabel.textContent = session.compareMode ? 'Prompt A' : 'Prompt';
+  runBtn.textContent = session.compareMode ? 'Compare prompts' : 'Run evaluation';
 
-  headerLede.textContent = compareMode
+  headerLede.textContent = session.compareMode
     ? 'Compare two prompt versions. Each test question is appended under both prompts so the comparison is fair.'
     : 'Run a prompt across test cases. Each question is appended under your prompt and scored the same way every run.';
 
-  resultsEmptyCopy.textContent = compareMode
+  resultsEmptyCopy.textContent = session.compareMode
     ? 'Run a comparison to see which prompt scores higher — then open details if you want to inspect cases and runs.'
     : 'Run an evaluation to see scores across cases — then open details if you want to inspect individual runs.';
 }
 
 function setBusy(busy) {
   runBtn.disabled = busy;
-  addCaseBtn.disabled = busy || cases.length >= MAX_CASES;
+  addCaseBtn.disabled = busy || session.cases.length >= MAX_CASES;
   enableCompareBtn.disabled = busy;
   disableCompareBtn.disabled = busy;
   promptAEl.readOnly = busy;
@@ -92,11 +98,11 @@ function setBusy(busy) {
     if (el.tagName === 'TEXTAREA') el.readOnly = busy;
     else {
       el.disabled = busy
-        || (el.classList.contains('eval-case__remove') && cases.length <= MIN_CASES);
+        || (el.classList.contains('eval-case__remove') && session.cases.length <= MIN_CASES);
     }
   });
   statusText.textContent = busy
-    ? (compareMode
+    ? (session.compareMode
       ? 'Comparing prompts — each run is independent…'
       : 'Running evaluation — each run is independent…')
     : '';
@@ -131,7 +137,7 @@ function isMultiPrompt(data) {
 
 function syncCasesFromDom() {
   const cards = [...casesListEl.querySelectorAll('.eval-case')];
-  cases = cards.map((card) => ({
+  session.cases = cards.map((card) => ({
     id: card.dataset.caseId,
     input: card.querySelector('[data-field="input"]')?.value ?? '',
     expectedAnswer: card.querySelector('[data-field="expected"]')?.value ?? '',
@@ -140,7 +146,7 @@ function syncCasesFromDom() {
 }
 
 function renderCases() {
-  casesListEl.innerHTML = cases
+  casesListEl.innerHTML = session.cases
     .map((c, index) => `
       <article class="eval-case" data-case-id="${escapeHtml(c.id)}">
         <div class="eval-case__header">
@@ -149,7 +155,7 @@ function renderCases() {
             type="button"
             class="button button-tertiary eval-case__remove"
             data-remove="${escapeHtml(c.id)}"
-            ${cases.length <= MIN_CASES ? 'disabled' : ''}
+            ${session.cases.length <= MIN_CASES ? 'disabled' : ''}
           >Remove</button>
         </div>
         <label class="eval-field">
@@ -164,7 +170,7 @@ function renderCases() {
     `)
     .join('');
 
-  addCaseBtn.disabled = cases.length >= MAX_CASES;
+  addCaseBtn.disabled = session.cases.length >= MAX_CASES;
   updateCasesSummary();
 }
 
@@ -425,12 +431,9 @@ function renderComparison(data) {
 
 async function runEvaluation() {
   showError('');
-  syncCasesFromDom();
+  pullSessionFromDom();
 
-  const promptA = promptAEl.value;
-  const promptB = promptBEl.value;
-  const metricId = metricSelectEl.value;
-  const runs = clampRuns(runCountEl.value);
+  const { promptA, promptB, compareMode, cases, metricId, runs } = session;
   runCountEl.value = String(runs);
 
   if (!promptA.trim()) {
@@ -474,7 +477,9 @@ async function runEvaluation() {
     if (!res.ok) {
       throw new Error(data.error || `Request failed (${res.status})`);
     }
+    session.lastResult = data;
     renderComparison(data);
+    persistSessionNow();
     statusText.textContent = 'Done.';
   } catch (err) {
     console.error('[eval] Run failed:', err);
@@ -498,15 +503,76 @@ function applyDefaults(defaults) {
   }
 }
 
-function applyInitialSession(session) {
+function pullSessionFromDom() {
+  syncCasesFromDom();
+  session = normalizeEvalSession({
+    ...session,
+    promptA: promptAEl.value,
+    promptB: promptBEl.value,
+    compareMode: session.compareMode,
+    cases: session.cases,
+    metricId: metricSelectEl.value,
+    runs: clampRuns(runCountEl.value),
+  }, sessionLimits());
+  runCountEl.value = String(session.runs);
+}
+
+function applySessionToDom() {
   promptAEl.value = session.promptA;
   promptBEl.value = session.promptB;
-  compareMode = session.promptB.trim() !== '';
-  cases = session.cases.map((c) => ({
-    id: newCaseId(),
-    input: c.input,
-    expectedAnswer: c.expectedAnswer,
-  }));
+  if ([...metricSelectEl.options].some((opt) => opt.value === session.metricId)) {
+    metricSelectEl.value = session.metricId;
+  }
+  runCountEl.value = String(clampRuns(session.runs));
+  renderCases();
+  syncCompareModeUi();
+}
+
+function applyInitialSession(initial) {
+  session = normalizeEvalSession({
+    promptA: initial.promptA,
+    promptB: initial.promptB,
+    compareMode: initial.promptB.trim() !== '',
+    cases: (initial.cases ?? []).map((c) => ({
+      id: newCaseId(),
+      input: c.input,
+      expectedAnswer: c.expectedAnswer,
+    })),
+    metricId: metricSelectEl.value,
+    runs: clampRuns(runCountEl.value),
+    lastResult: null,
+  }, sessionLimits());
+}
+
+async function persistSession() {
+  if (!persistEnabled) return;
+  pullSessionFromDom();
+  try {
+    const res = await fetch('/api/eval/session', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(session),
+    });
+    if (!res.ok) {
+      console.error('[eval] Failed to persist session:', res.status);
+    }
+  } catch (err) {
+    console.error('[eval] Failed to persist session:', err);
+  }
+}
+
+function scheduleSave() {
+  if (!persistEnabled) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    void persistSession();
+  }, SAVE_DEBOUNCE_MS);
+}
+
+function persistSessionNow() {
+  if (!persistEnabled) return;
+  clearTimeout(saveTimer);
+  void persistSession();
 }
 
 async function loadSessionConfig() {
@@ -520,38 +586,84 @@ async function loadSessionConfig() {
   }
 }
 
+async function loadEvalSession() {
+  try {
+    const res = await fetch('/api/eval/session');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return null;
+    return data.session ?? null;
+  } catch {
+    return null;
+  }
+}
+
 async function init() {
-  const config = await loadSessionConfig();
+  const [config, saved] = await Promise.all([
+    loadSessionConfig(),
+    loadEvalSession(),
+  ]);
   applyDefaults(config.defaults);
-  applyInitialSession(config.initialSession);
-  renderCases();
-  syncCompareModeUi();
+  if (saved) {
+    session = normalizeEvalSession(saved, sessionLimits());
+    applySessionToDom();
+    if (isRenderableResult(session.lastResult)) {
+      renderComparison(session.lastResult);
+    }
+  } else {
+    applyInitialSession(config.initialSession);
+    applySessionToDom();
+  }
+  persistEnabled = true;
 }
 
 enableCompareBtn.addEventListener('click', () => {
-  compareMode = true;
+  session.compareMode = true;
   syncCompareModeUi();
+  persistSessionNow();
 });
 
 disableCompareBtn.addEventListener('click', () => {
-  compareMode = false;
+  session.compareMode = false;
   syncCompareModeUi();
+  persistSessionNow();
 });
 
 addCaseBtn.addEventListener('click', () => {
   syncCasesFromDom();
-  if (cases.length >= MAX_CASES) return;
-  cases.push({ id: newCaseId(), input: '', expectedAnswer: '' });
+  if (session.cases.length >= MAX_CASES) return;
+  session.cases.push({ id: newCaseId(), input: '', expectedAnswer: '' });
   renderCases();
+  persistSessionNow();
 });
 
 casesListEl.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-remove]');
   if (!btn) return;
   syncCasesFromDom();
-  if (cases.length <= MIN_CASES) return;
-  cases = cases.filter((c) => c.id !== btn.getAttribute('data-remove'));
+  if (session.cases.length <= MIN_CASES) return;
+  session.cases = session.cases.filter((c) => c.id !== btn.getAttribute('data-remove'));
   renderCases();
+  persistSessionNow();
+});
+
+casesListEl.addEventListener('input', () => {
+  syncCasesFromDom();
+  scheduleSave();
+});
+
+promptAEl.addEventListener('input', () => {
+  session.promptA = promptAEl.value;
+  scheduleSave();
+});
+
+promptBEl.addEventListener('input', () => {
+  session.promptB = promptBEl.value;
+  scheduleSave();
+});
+
+metricSelectEl.addEventListener('change', () => {
+  session.metricId = metricSelectEl.value;
+  persistSessionNow();
 });
 
 runBtn.addEventListener('click', () => {
@@ -560,6 +672,8 @@ runBtn.addEventListener('click', () => {
 
 runCountEl.addEventListener('change', () => {
   runCountEl.value = String(clampRuns(runCountEl.value));
+  session.runs = clampRuns(runCountEl.value);
+  persistSessionNow();
 });
 
 void init();

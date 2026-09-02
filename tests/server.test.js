@@ -6,6 +6,7 @@ vi.mock('fs/promises', () => ({
   default: {
     readFile: vi.fn(),
     writeFile: vi.fn(),
+    rename: vi.fn(),
   },
 }));
 
@@ -50,6 +51,90 @@ process.env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 
 const { createLlmProvider } = await import('../lib/llm/provider.js');
 const { app, resetLlmCache } = await import('../server.js');
+
+// ── GET / PUT /api/eval/session ───────────────────────────────
+
+describe('GET /api/eval/session', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('returns session null when the file is missing', async () => {
+    fs.readFile.mockRejectedValue(new Error('ENOENT'));
+    const res = await request(app).get('/api/eval/session');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ session: null });
+  });
+
+  it('returns a normalized session when the file is present', async () => {
+    fs.readFile.mockImplementation(async (p) => {
+      const path = String(p);
+      if (path.includes('eval-session.json')) {
+        return JSON.stringify({
+          promptA: 'A',
+          promptB: 'B',
+          compareMode: true,
+          cases: [{ id: 'c1', input: 'France', expectedAnswer: 'Paris' }],
+          metricId: 'contains',
+          runs: 3,
+          lastResult: { conditions: { runs: 3, caseCount: 1 }, prompts: [], cases: [], comparison: {} },
+        });
+      }
+      if (path.includes('session.config.json')) return '{}';
+      throw new Error('ENOENT');
+    });
+    const res = await request(app).get('/api/eval/session');
+    expect(res.status).toBe(200);
+    expect(res.body.session.promptA).toBe('A');
+    expect(res.body.session.compareMode).toBe(true);
+    expect(res.body.session.metricId).toBe('contains');
+    expect(res.body.session.cases).toHaveLength(1);
+    expect(res.body.session.lastResult.conditions.runs).toBe(3);
+  });
+});
+
+describe('PUT /api/eval/session', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('writes a normalized session and returns it', async () => {
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) return '{}';
+      throw new Error('ENOENT');
+    });
+    fs.writeFile.mockResolvedValue(undefined);
+    fs.rename.mockResolvedValue(undefined);
+
+    const res = await request(app)
+      .put('/api/eval/session')
+      .send({
+        promptA: 'Hello',
+        compareMode: true,
+        cases: [
+          { id: 'c1', input: 'France', expectedAnswer: 'Paris' },
+          { id: 'c2', input: 'Japan', expectedAnswer: 'Tokyo' },
+          { id: 'c3', input: 'Spain', expectedAnswer: 'Madrid' },
+          { id: 'c4', input: 'Italy', expectedAnswer: 'Rome' },
+          { id: 'c5', input: 'Peru', expectedAnswer: 'Lima' },
+          { id: 'c6', input: 'Chile', expectedAnswer: 'Santiago' },
+        ],
+        metricId: 'nope',
+        runs: 2,
+        lastResult: 'bad',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.session.promptA).toBe('Hello');
+    expect(res.body.session.compareMode).toBe(true);
+    expect(res.body.session.metricId).toBe('exact-match');
+    expect(res.body.session.cases).toHaveLength(5);
+    expect(res.body.session.lastResult).toBeNull();
+    expect(fs.writeFile).toHaveBeenCalledOnce();
+    expect(String(fs.writeFile.mock.calls[0][0])).toMatch(/\.eval-session\.json\.\d+\.[0-9a-f-]{36}\.tmp$/);
+    expect(fs.rename).toHaveBeenCalledOnce();
+    expect(String(fs.rename.mock.calls[0][1])).toMatch(/eval-session\.json$/);
+    const written = JSON.parse(fs.writeFile.mock.calls[0][1]);
+    expect(written.promptA).toBe('Hello');
+    expect(written.cases).toHaveLength(5);
+  });
+});
 
 // ── GET /api/session-config ───────────────────────────────────
 

@@ -7,6 +7,7 @@ import {
   deriveTitle,
   readJsonFile,
   writeJsonFile,
+  writeJsonFileAtomic,
   filterModels,
   matchLocale,
   htmlLangFromLocale,
@@ -26,11 +27,13 @@ import {
   listMetrics,
 } from './lib/metrics/index.js';
 import { normalizeSessionConfig } from './lib/session-config.js';
+import { normalizeEvalSession } from './lib/eval-session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSIONS_FILE = path.join(__dirname, 'chat-sessions.json');
 const CONFIG_FILE   = path.join(__dirname, 'chat-config.json');
 const SESSION_CONFIG_FILE = path.join(__dirname, 'session.config.json');
+const EVAL_SESSION_FILE = path.join(__dirname, 'eval-session.json');
 const MODELS_FILE   = path.join(__dirname, 'current-models.txt');
 const CAPABILITIES_FILE = path.join(__dirname, 'model-capabilities.json');
 const I18N_DIR      = path.join(__dirname, 'i18n');
@@ -328,6 +331,36 @@ app.post('/api/trigger', (req, res) => {
 // Lists registered scoring metrics (modular registry in lib/metrics/).
 app.get('/api/eval/metrics', (_req, res) => {
   res.json({ metrics: listMetrics(), defaultMetricId: DEFAULT_METRIC_ID });
+});
+
+const evalSessionWrite = { chain: Promise.resolve() };
+
+async function sessionLimitsFromConfig() {
+  const config = normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {}));
+  return config.defaults;
+}
+
+// One working eval session (prompts, cases, settings, last results).
+// Missing file → { session: null } so the client can fall back to initialSession.
+app.get('/api/eval/session', async (_req, res) => {
+  const raw = await readJsonFile(EVAL_SESSION_FILE, null);
+  if (raw == null) return res.json({ session: null });
+  const limits = await sessionLimitsFromConfig();
+  res.json({ session: normalizeEvalSession(raw, limits) });
+});
+
+app.put('/api/eval/session', async (req, res) => {
+  try {
+    const limits = await sessionLimitsFromConfig();
+    const session = normalizeEvalSession(req.body, limits);
+    await enqueueSessionsWrite(async () => {
+      await writeJsonFileAtomic(EVAL_SESSION_FILE, session);
+    }, evalSessionWrite);
+    res.json({ session });
+  } catch (err) {
+    console.error('[eval/session] Error:', err);
+    res.status(500).json({ error: 'Failed to save eval session' });
+  }
 });
 
 // ── POST /api/eval/run ────────────────────────────────────────
