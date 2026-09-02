@@ -56,14 +56,15 @@ describe('createLlmProvider', () => {
 
   it('throws on an unknown provider', () => {
     expect(() => createLlmProvider({
-      LLM_PROVIDER: 'gemini',
+      LLM_PROVIDER: 'mistral',
       ANTHROPIC_API_KEY: 'sk-test',
-    })).toThrow(/Unsupported LLM_PROVIDER "gemini"/);
+    })).toThrow(/Unsupported LLM_PROVIDER "mistral"/);
   });
 
   it('reports the API key env var for the selected provider', () => {
     expect(requiredApiKeyName({})).toBe('ANTHROPIC_API_KEY');
     expect(requiredApiKeyName({ LLM_PROVIDER: 'openai' })).toBe('OPENAI_API_KEY');
+    expect(requiredApiKeyName({ LLM_PROVIDER: 'gemini' })).toBe('GOOGLE_API_KEY');
   });
 
   it('throws when ANTHROPIC_API_KEY is missing', () => {

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
+    "@google/genai": "^2.20.0",
     "dotenv": "^17.4.2",
     "express": "^4.19.2",
     "highlight.js": "^11.11.1",

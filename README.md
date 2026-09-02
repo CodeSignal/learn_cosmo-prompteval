@@ -25,6 +25,7 @@ Fill in `.env` for the provider you want:
 
 - Anthropic (default): `ANTHROPIC_API_KEY`, optional `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL`
 - OpenAI: set `LLM_PROVIDER=openai` and `OPENAI_API_KEY`, optional `OPENAI_BASE_URL` / `OPENAI_MODEL`
+- Gemini: set `LLM_PROVIDER=gemini` and `GOOGLE_API_KEY`, optional `GOOGLE_BASE_URL` / `GOOGLE_MODEL`
 
 ## Run
 
@@ -43,6 +44,6 @@ npm test
 ## Stack
 
 - Node.js + Express
-- `@anthropic-ai/sdk` (Claude Messages API) or `openai` (Chat Completions)
+- `@anthropic-ai/sdk` (Claude Messages API), `openai` (Chat Completions), or `@google/genai` (Gemini)
 - CodeSignal Bespoke Design System (git submodule)
 - Vanilla JS + esbuild

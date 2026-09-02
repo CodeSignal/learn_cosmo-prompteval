@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { optionalHttpsBaseUrl } from '../lib/llm/base-url.js';
 import { createOpenAiProvider } from '../lib/llm/openai.js';
 import { createAnthropicProvider } from '../lib/llm/anthropic.js';
+import { createGeminiProvider } from '../lib/llm/gemini.js';
 
 describe('optionalHttpsBaseUrl', () => {
   it('returns undefined for absent or blank values', () => {
@@ -36,5 +37,12 @@ describe('provider base URL guards', () => {
       ANTHROPIC_API_KEY: 'sk-test',
       ANTHROPIC_BASE_URL: 'http://localhost:8080',
     })).toThrow(/ANTHROPIC_BASE_URL must use HTTPS/);
+  });
+
+  it('rejects a non-HTTPS GOOGLE_BASE_URL before constructing the client', () => {
+    expect(() => createGeminiProvider({
+      GOOGLE_API_KEY: 'sk-test',
+      GOOGLE_BASE_URL: 'http://localhost:8080',
+    })).toThrow(/GOOGLE_BASE_URL must use HTTPS/);
   });
 });
