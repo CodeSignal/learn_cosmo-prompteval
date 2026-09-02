@@ -7,6 +7,7 @@ import {
   deriveTitle,
   readJsonFile,
   writeJsonFile,
+  writeJsonFileAtomic,
   filterModels,
   matchLocale,
   htmlLangFromLocale,
@@ -353,7 +354,7 @@ app.put('/api/eval/session', async (req, res) => {
     const limits = await sessionLimitsFromConfig();
     const session = normalizeEvalSession(req.body, limits);
     await enqueueSessionsWrite(async () => {
-      await writeJsonFile(EVAL_SESSION_FILE, session);
+      await writeJsonFileAtomic(EVAL_SESSION_FILE, session);
     }, evalSessionWrite);
     res.json({ session });
   } catch (err) {

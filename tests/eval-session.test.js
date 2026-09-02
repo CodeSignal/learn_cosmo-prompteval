@@ -69,15 +69,69 @@ describe('normalizeEvalSession', () => {
   });
 });
 
+const completeResult = {
+  conditions: { runs: 1, caseCount: 1 },
+  prompts: [{ id: 'A', label: 'Prompt', aggregate: { mean: 1 } }],
+  cases: [{
+    label: 'Case 1',
+    input: 'France',
+    comparison: { outcome: 'unscored', means: { A: 1 } },
+    prompts: [{ id: 'A', label: 'Prompt', results: [] }],
+  }],
+  comparison: { outcome: 'unscored', means: { A: 1 } },
+};
+
 describe('isRenderableResult', () => {
-  it('accepts a comparison-shaped payload', () => {
+  it('accepts a complete comparison payload', () => {
+    expect(isRenderableResult(completeResult)).toBe(true);
     expect(isRenderableResult({
-      conditions: { runs: 1, caseCount: 1 },
+      conditions: { runs: 1, caseCount: 0 },
       prompts: [],
       cases: [],
-      comparison: { outcome: 'unscored' },
+      comparison: { outcome: 'unscored', means: {} },
     })).toBe(true);
+  });
+
+  it('rejects malformed nested result objects', () => {
     expect(isRenderableResult({ prompts: [] })).toBe(false);
     expect(isRenderableResult(null)).toBe(false);
+    expect(isRenderableResult({
+      ...completeResult,
+      comparison: { outcome: 'unscored' },
+    })).toBe(false);
+    expect(isRenderableResult({
+      ...completeResult,
+      comparison: { outcome: 'unscored', means: null },
+    })).toBe(false);
+    expect(isRenderableResult({
+      ...completeResult,
+      comparison: { outcome: 'unscored', means: ['A'] },
+    })).toBe(false);
+    expect(isRenderableResult({
+      ...completeResult,
+      prompts: [{ label: 'Prompt' }],
+    })).toBe(false);
+    expect(isRenderableResult({
+      ...completeResult,
+      prompts: [null],
+    })).toBe(false);
+    expect(isRenderableResult({
+      ...completeResult,
+      cases: [{ input: 'France' }],
+    })).toBe(false);
+    expect(isRenderableResult({
+      ...completeResult,
+      cases: [{
+        ...completeResult.cases[0],
+        comparison: { outcome: 'unscored' },
+      }],
+    })).toBe(false);
+    expect(isRenderableResult({
+      ...completeResult,
+      cases: [{
+        ...completeResult.cases[0],
+        prompts: [{ id: 'A', label: 'Prompt' }],
+      }],
+    })).toBe(false);
   });
 });

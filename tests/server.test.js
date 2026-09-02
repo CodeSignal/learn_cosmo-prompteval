@@ -6,6 +6,7 @@ vi.mock('fs/promises', () => ({
   default: {
     readFile: vi.fn(),
     writeFile: vi.fn(),
+    rename: vi.fn(),
   },
 }));
 
@@ -99,6 +100,7 @@ describe('PUT /api/eval/session', () => {
       throw new Error('ENOENT');
     });
     fs.writeFile.mockResolvedValue(undefined);
+    fs.rename.mockResolvedValue(undefined);
 
     const res = await request(app)
       .put('/api/eval/session')
@@ -125,6 +127,9 @@ describe('PUT /api/eval/session', () => {
     expect(res.body.session.cases).toHaveLength(5);
     expect(res.body.session.lastResult).toBeNull();
     expect(fs.writeFile).toHaveBeenCalledOnce();
+    expect(String(fs.writeFile.mock.calls[0][0])).toMatch(/\.eval-session\.json\.\d+\.tmp$/);
+    expect(fs.rename).toHaveBeenCalledOnce();
+    expect(String(fs.rename.mock.calls[0][1])).toMatch(/eval-session\.json$/);
     const written = JSON.parse(fs.writeFile.mock.calls[0][1]);
     expect(written.promptA).toBe('Hello');
     expect(written.cases).toHaveLength(5);
