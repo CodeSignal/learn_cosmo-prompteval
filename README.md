@@ -2,7 +2,7 @@
 
 A CodeSignal learning project that teaches how to **evaluate** LLM prompts — not only how to write them.
 
-Learners run the same prompt template against an input across multiple **independent** Claude API calls, then score outputs against an optional expected answer using simple metrics.
+Learners run the same prompt template against an input across multiple **independent** LLM calls, then score outputs against an optional expected answer using simple metrics.
 
 ## Milestone status
 
@@ -21,7 +21,10 @@ npm install
 cp .env.example .env
 ```
 
-Fill in `.env` with your Anthropic API key (`ANTHROPIC_API_KEY`). Optionally set `ANTHROPIC_BASE_URL` and `ANTHROPIC_MODEL`.
+Fill in `.env` for the provider you want:
+
+- Anthropic (default): `ANTHROPIC_API_KEY`, optional `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL`
+- OpenAI: set `LLM_PROVIDER=openai` and `OPENAI_API_KEY`, optional `OPENAI_BASE_URL` / `OPENAI_MODEL`
 
 ## Run
 
@@ -40,6 +43,6 @@ npm test
 ## Stack
 
 - Node.js + Express
-- `@anthropic-ai/sdk` (Claude Messages API)
+- `@anthropic-ai/sdk` (Claude Messages API) or `openai` (Chat Completions)
 - CodeSignal Bespoke Design System (git submodule)
 - Vanilla JS + esbuild
