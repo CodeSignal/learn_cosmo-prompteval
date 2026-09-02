@@ -4,6 +4,7 @@
  */
 
 import { collectPromptScoresByCase } from '../lib/score-distribution.js';
+import { FALLBACK_DEFAULTS, normalizeSessionConfig } from '../lib/session-config.js';
 
 const promptAEl = document.getElementById('promptA');
 const promptBEl = document.getElementById('promptB');
@@ -20,6 +21,7 @@ const casesSummaryMeta = document.getElementById('casesSummaryMeta');
 const addCaseBtn = document.getElementById('addCaseBtn');
 const metricSelectEl = document.getElementById('metricSelect');
 const runCountEl = document.getElementById('runCount');
+const runCountLabel = document.getElementById('runCountLabel');
 const runBtn = document.getElementById('runBtn');
 const statusText = document.getElementById('statusText');
 const errorText = document.getElementById('errorText');
@@ -31,15 +33,10 @@ const overallGrid = document.getElementById('overallGrid');
 const caseResultsEl = document.getElementById('caseResults');
 const caseDetailsPanel = document.getElementById('caseDetailsPanel');
 
-const MIN_RUNS = 1;
-const MAX_RUNS = 5;
-const MIN_CASES = 1;
-const MAX_CASES = 5;
-
-const DEFAULT_PROMPT_A =
-  'Answer with only the capital city of the country named below. No punctuation.';
-const DEFAULT_PROMPT_B =
-  'What is the capital of the following country? Reply in a full sentence.';
+let MIN_RUNS = FALLBACK_DEFAULTS.minRuns;
+let MAX_RUNS = FALLBACK_DEFAULTS.maxRuns;
+let MIN_CASES = FALLBACK_DEFAULTS.minCases;
+let MAX_CASES = FALLBACK_DEFAULTS.maxCases;
 
 /** @type {Array<{ id: string, input: string, expectedAnswer: string }>} */
 let cases = [];
@@ -48,7 +45,8 @@ let compareMode = false;
 
 function clampRuns(value) {
   const n = Number.parseInt(String(value ?? ''), 10);
-  if (!Number.isFinite(n)) return 2;
+  const fallback = Math.min(MAX_RUNS, Math.max(MIN_RUNS, 2));
+  if (!Number.isFinite(n)) return fallback;
   return Math.min(MAX_RUNS, Math.max(MIN_RUNS, n));
 }
 
@@ -487,11 +485,51 @@ async function runEvaluation() {
   }
 }
 
+function applyDefaults(defaults) {
+  MIN_RUNS = defaults.minRuns;
+  MAX_RUNS = defaults.maxRuns;
+  MIN_CASES = defaults.minCases;
+  MAX_CASES = defaults.maxCases;
+  runCountEl.min = String(MIN_RUNS);
+  runCountEl.max = String(MAX_RUNS);
+  runCountEl.value = String(clampRuns(runCountEl.value));
+  if (runCountLabel) {
+    runCountLabel.textContent = `Runs each (${MIN_RUNS}–${MAX_RUNS})`;
+  }
+}
+
+function applyInitialSession(session) {
+  promptAEl.value = session.promptA;
+  promptBEl.value = session.promptB;
+  compareMode = session.promptB.trim() !== '';
+  cases = session.cases.map((c) => ({
+    id: newCaseId(),
+    input: c.input,
+    expectedAnswer: c.expectedAnswer,
+  }));
+}
+
+async function loadSessionConfig() {
+  try {
+    const res = await fetch('/api/session-config');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return normalizeSessionConfig({});
+    return normalizeSessionConfig(data);
+  } catch {
+    return normalizeSessionConfig({});
+  }
+}
+
+async function init() {
+  const config = await loadSessionConfig();
+  applyDefaults(config.defaults);
+  applyInitialSession(config.initialSession);
+  renderCases();
+  syncCompareModeUi();
+}
+
 enableCompareBtn.addEventListener('click', () => {
   compareMode = true;
-  if (!promptBEl.value.trim()) {
-    promptBEl.value = DEFAULT_PROMPT_B;
-  }
   syncCompareModeUi();
 });
 
@@ -524,12 +562,4 @@ runCountEl.addEventListener('change', () => {
   runCountEl.value = String(clampRuns(runCountEl.value));
 });
 
-if (!promptAEl.value) {
-  promptAEl.value = DEFAULT_PROMPT_A;
-}
-
-cases = [
-  { id: newCaseId(), input: 'France', expectedAnswer: 'Paris' },
-];
-renderCases();
-syncCompareModeUi();
+void init();

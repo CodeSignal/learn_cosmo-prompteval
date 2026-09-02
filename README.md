@@ -19,6 +19,7 @@ git clone --recurse-submodules <this-repo-url>
 cd learn_cosmo-prompteval
 npm install
 cp .env.example .env
+cp session.config.example.json session.config.json
 ```
 
 Fill in `.env` for the provider you want:
@@ -26,6 +27,13 @@ Fill in `.env` for the provider you want:
 - Anthropic (default): `ANTHROPIC_API_KEY`, optional `ANTHROPIC_BASE_URL` / `ANTHROPIC_MODEL`
 - OpenAI: set `LLM_PROVIDER=openai` and `OPENAI_API_KEY`, optional `OPENAI_BASE_URL` / `OPENAI_MODEL`
 - Gemini: set `LLM_PROVIDER=gemini` and `GOOGLE_API_KEY`, optional `GOOGLE_BASE_URL` / `GOOGLE_MODEL`
+
+`session.config.json` is separate from `.env`. It is local (not checked in) and holds **session defaults**, not secrets:
+
+- `defaults` (optional) — `minRuns`, `maxRuns`, `minCases`, `maxCases` (each 1–5)
+- `initialSession` (optional) — `promptA`, `promptB`, and `cases` (`input` / `expectedAnswer`)
+
+Without `session.config.json`, prompts and cases start empty and the UI uses the built-in 1–5 limits. Copy `session.config.example.json` to prefill the capital-city demo.
 
 ## Run
 

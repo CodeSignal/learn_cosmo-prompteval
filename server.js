@@ -25,10 +25,12 @@ import {
   isValidMetricId,
   listMetrics,
 } from './lib/metrics/index.js';
+import { normalizeSessionConfig } from './lib/session-config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSIONS_FILE = path.join(__dirname, 'chat-sessions.json');
 const CONFIG_FILE   = path.join(__dirname, 'chat-config.json');
+const SESSION_CONFIG_FILE = path.join(__dirname, 'session.config.json');
 const MODELS_FILE   = path.join(__dirname, 'current-models.txt');
 const CAPABILITIES_FILE = path.join(__dirname, 'model-capabilities.json');
 const I18N_DIR      = path.join(__dirname, 'i18n');
@@ -121,6 +123,13 @@ async function resolveConfigI18n(config) {
     htmlLang: locale ? htmlLangFromLocale(locale) : null,
   };
 }
+
+// Local eval session defaults (prompts, cases, UI min/max). Not secrets —
+// those stay in .env. Missing file → empty initial session + built-in limits.
+app.get('/api/session-config', async (_req, res) => {
+  const raw = await readJsonFile(SESSION_CONFIG_FILE, {});
+  res.json(normalizeSessionConfig(raw));
+});
 
 app.get('/api/config', async (_req, res) => {
   const config = await readConfig();
