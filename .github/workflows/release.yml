@@ -1,0 +1,66 @@
+# Attach a deployable tarball to a GitHub release.
+# The archive includes node_modules, the design-system submodule, and the
+# built client (public/app.bundle.js) so a new environment can unpack,
+# add a local .env, and start with `node server.js`.
+
+name: Build and Release
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Populate design system submodule
+        run: git submodule update --init
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend bundle
+        run: npm run build
+
+      - name: Archive release package
+        run: |
+          tar -czf /tmp/dist.tar.gz \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='.env' \
+            --exclude='session.config.json' \
+            --exclude='eval-session.json' \
+            --exclude='chat-sessions.json' \
+            --exclude='chat-config.json' \
+            --exclude='public/app.js' \
+            .
+          mv /tmp/dist.tar.gz dist.tar.gz
+
+      - name: Upload build artifact (for workflow logs)
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist.tar.gz
+
+      - name: Upload asset to existing release
+        uses: ncipollo/release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.event.release.tag_name }}
+          artifacts: dist.tar.gz
+          allowUpdates: true
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true

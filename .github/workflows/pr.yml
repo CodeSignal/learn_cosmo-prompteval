@@ -1,0 +1,33 @@
+# Pull-request checks for the Prompt Evaluation Simulator.
+# Runs the Vitest unit suite and confirms the frontend bundle builds.
+
+name: PR
+
+on:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Populate design system submodule
+        run: git submodule update --init
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build frontend bundle
+        run: npm run build
