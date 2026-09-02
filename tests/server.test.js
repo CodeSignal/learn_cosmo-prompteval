@@ -51,6 +51,54 @@ process.env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 const { createLlmProvider } = await import('../lib/llm/provider.js');
 const { app, resetLlmCache } = await import('../server.js');
 
+// ── GET /api/session-config ───────────────────────────────────
+
+describe('GET /api/session-config', () => {
+  beforeEach(() => vi.resetAllMocks());
+
+  it('returns a normalized empty session when the file is missing', async () => {
+    fs.readFile.mockRejectedValue(new Error('ENOENT'));
+    const res = await request(app).get('/api/session-config');
+    expect(res.status).toBe(200);
+    expect(res.body.defaults).toEqual({
+      minRuns: 1,
+      maxRuns: 5,
+      minCases: 1,
+      maxCases: 5,
+    });
+    expect(res.body.initialSession).toEqual({
+      promptA: '',
+      promptB: '',
+      cases: [],
+    });
+  });
+
+  it('returns parsed session.config.json with defaults and initialSession', async () => {
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({
+          defaults: { minRuns: 2, maxRuns: 4 },
+          initialSession: {
+            promptA: 'Prompt A',
+            promptB: 'Prompt B',
+            cases: [{ input: 'France', expectedAnswer: 'Paris' }],
+          },
+        });
+      }
+      throw new Error('ENOENT');
+    });
+    const res = await request(app).get('/api/session-config');
+    expect(res.status).toBe(200);
+    expect(res.body.defaults.minRuns).toBe(2);
+    expect(res.body.defaults.maxRuns).toBe(4);
+    expect(res.body.initialSession.promptA).toBe('Prompt A');
+    expect(res.body.initialSession.promptB).toBe('Prompt B');
+    expect(res.body.initialSession.cases).toEqual([
+      { input: 'France', expectedAnswer: 'Paris' },
+    ]);
+  });
+});
+
 // ── GET /api/config ───────────────────────────────────────────
 
 describe('GET /api/config', () => {

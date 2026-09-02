@@ -1,0 +1,18 @@
+{
+  "defaults": {
+    "minRuns": 1,
+    "maxRuns": 5,
+    "minCases": 1,
+    "maxCases": 5
+  },
+  "initialSession": {
+    "promptA": "Answer with only the capital city of the country named below. No punctuation.",
+    "promptB": "What is the capital of the following country? Reply in a full sentence.",
+    "cases": [
+      {
+        "input": "France",
+        "expectedAnswer": "Paris"
+      }
+    ]
+  }
+}
