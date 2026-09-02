@@ -19,7 +19,7 @@ import {
 import { enqueueSessionsWrite } from './lib/sessions-file.js';
 import { MAX_EVAL_RUNS, MIN_EVAL_RUNS, runEvalBatch } from './lib/eval-run.js';
 import { runPromptComparison, MAX_EVAL_CASES } from './lib/eval-compare.js';
-import { createLlmProvider } from './lib/llm/provider.js';
+import { createLlmProvider, requiredApiKeyName } from './lib/llm/provider.js';
 import {
   DEFAULT_METRIC_ID,
   isValidMetricId,
@@ -41,13 +41,13 @@ const CHAT_UNAVAILABLE = 'Chat sessions are not available; this app uses the Cla
 let cachedLlm;
 
 /**
- * Resolve the configured LLM provider. Missing ANTHROPIC_API_KEY is treated as
- * "not configured" so eval routes can return 503 without crashing startup.
+ * Resolve the configured LLM provider. A missing provider API key is treated
+ * as "not configured" so eval routes can return 503 without crashing startup.
  * @returns {import('./lib/llm/types.js').LlmProvider | null}
  */
-
 function getLlm() {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
+  const keyName = requiredApiKeyName(process.env);
+  if (!process.env[keyName]) return null;
   if (!cachedLlm) cachedLlm = createLlmProvider(process.env);
   return cachedLlm;
 }
@@ -62,7 +62,7 @@ function resolveLlm(res) {
   try {
     const llm = getLlm();
     if (!llm) {
-      res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured' });
+      res.status(503).json({ error: `${requiredApiKeyName()} is not configured` });
       return null;
     }
     return llm;
@@ -466,8 +466,9 @@ app.post('/api/eval/compare', async (req, res) => {
 if (process.env.NODE_ENV !== 'test') {
   const server = app.listen(PORT, () => {
     console.log(`Prompt Evaluation Simulator at http://localhost:${PORT}`);
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.warn('[WARN] ANTHROPIC_API_KEY is not set — evaluation will not work until it is configured.');
+    const keyName = requiredApiKeyName();
+    if (!process.env[keyName]) {
+      console.warn(`[WARN] ${keyName} is not set — evaluation will not work until it is configured.`);
     }
   });
   server.on('error', (err) => {
