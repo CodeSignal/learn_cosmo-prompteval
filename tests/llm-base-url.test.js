@@ -1,48 +1,56 @@
 import { describe, it, expect } from 'vitest';
-import { optionalHttpsBaseUrl } from '../lib/llm/base-url.js';
+import { optionalBaseUrl } from '../lib/llm/base-url.js';
 import { createOpenAiProvider } from '../lib/llm/openai.js';
 import { createAnthropicProvider } from '../lib/llm/anthropic.js';
 import { createGeminiProvider } from '../lib/llm/gemini.js';
 
-describe('optionalHttpsBaseUrl', () => {
+describe('optionalBaseUrl', () => {
   it('returns undefined for absent or blank values', () => {
-    expect(optionalHttpsBaseUrl(undefined, 'OPENAI_BASE_URL')).toBeUndefined();
-    expect(optionalHttpsBaseUrl('', 'OPENAI_BASE_URL')).toBeUndefined();
-    expect(optionalHttpsBaseUrl('   ', 'OPENAI_BASE_URL')).toBeUndefined();
+    expect(optionalBaseUrl(undefined, 'OPENAI_BASE_URL')).toBeUndefined();
+    expect(optionalBaseUrl('', 'OPENAI_BASE_URL')).toBeUndefined();
+    expect(optionalBaseUrl('   ', 'OPENAI_BASE_URL')).toBeUndefined();
   });
 
   it('trims a valid https URL', () => {
-    expect(optionalHttpsBaseUrl('  https://api.example.test/v1  ', 'OPENAI_BASE_URL'))
+    expect(optionalBaseUrl('  https://api.example.test/v1  ', 'OPENAI_BASE_URL'))
       .toBe('https://api.example.test/v1');
   });
 
-  it('rejects http and non-URL values', () => {
-    expect(() => optionalHttpsBaseUrl('http://api.example.test', 'OPENAI_BASE_URL'))
-      .toThrow(/OPENAI_BASE_URL must use HTTPS/);
-    expect(() => optionalHttpsBaseUrl('not-a-url', 'ANTHROPIC_BASE_URL'))
-      .toThrow(/ANTHROPIC_BASE_URL must be an https URL/);
+  it('accepts an http URL', () => {
+    expect(optionalBaseUrl('http://llm-proxy.internal/v1', 'OPENAI_BASE_URL'))
+      .toBe('http://llm-proxy.internal/v1');
+  });
+
+  it('rejects non-URL and non-http(s) values', () => {
+    expect(() => optionalBaseUrl('not-a-url', 'ANTHROPIC_BASE_URL'))
+      .toThrow(/ANTHROPIC_BASE_URL must be an http or https URL/);
+    expect(() => optionalBaseUrl('ftp://api.example.test', 'OPENAI_BASE_URL'))
+      .toThrow(/OPENAI_BASE_URL must be an http or https URL/);
   });
 });
 
-describe('provider base URL guards', () => {
-  it('rejects a non-HTTPS OPENAI_BASE_URL before constructing the client', () => {
-    expect(() => createOpenAiProvider({
+describe('provider base URL', () => {
+  it('accepts an http OPENAI_BASE_URL', () => {
+    const llm = createOpenAiProvider({
       OPENAI_API_KEY: 'sk-test',
       OPENAI_BASE_URL: 'http://localhost:8080',
-    })).toThrow(/OPENAI_BASE_URL must use HTTPS/);
+    });
+    expect(llm.name).toBe('openai');
   });
 
-  it('rejects a non-HTTPS ANTHROPIC_BASE_URL before constructing the client', () => {
-    expect(() => createAnthropicProvider({
+  it('accepts an http ANTHROPIC_BASE_URL', () => {
+    const llm = createAnthropicProvider({
       ANTHROPIC_API_KEY: 'sk-test',
       ANTHROPIC_BASE_URL: 'http://localhost:8080',
-    })).toThrow(/ANTHROPIC_BASE_URL must use HTTPS/);
+    });
+    expect(llm.name).toBe('anthropic');
   });
 
-  it('rejects a non-HTTPS GOOGLE_BASE_URL before constructing the client', () => {
-    expect(() => createGeminiProvider({
+  it('accepts an http GOOGLE_BASE_URL', () => {
+    const llm = createGeminiProvider({
       GOOGLE_API_KEY: 'sk-test',
       GOOGLE_BASE_URL: 'http://localhost:8080',
-    })).toThrow(/GOOGLE_BASE_URL must use HTTPS/);
+    });
+    expect(llm.name).toBe('gemini');
   });
 });
