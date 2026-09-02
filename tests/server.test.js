@@ -9,13 +9,17 @@ vi.mock('fs/promises', () => ({
   },
 }));
 
-vi.mock('../lib/llm/provider.js', () => ({
-  createLlmProvider: vi.fn(() => ({
-    name: 'anthropic',
-    model: 'claude-sonnet-4-6',
-    complete: vi.fn().mockResolvedValue({ text: 'mock-output', requestId: 'msg-1' }),
-  })),
-}));
+vi.mock('../lib/llm/provider.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    createLlmProvider: vi.fn(() => ({
+      name: 'anthropic',
+      model: 'claude-sonnet-4-6',
+      complete: vi.fn().mockResolvedValue({ text: 'mock-output', requestId: 'msg-1' }),
+    })),
+  };
+});
 
 vi.mock('../lib/eval-run.js', async (importOriginal) => {
   const actual = await importOriginal();
@@ -477,6 +481,26 @@ describe('POST /api/eval/run', () => {
       expect(runEvalBatch).not.toHaveBeenCalled();
     } finally {
       process.env.ANTHROPIC_API_KEY = previous;
+    }
+  });
+
+  it('returns 503 when LLM_PROVIDER=openai and OPENAI_API_KEY is missing', async () => {
+    const previousProvider = process.env.LLM_PROVIDER;
+    const previousKey = process.env.OPENAI_API_KEY;
+    process.env.LLM_PROVIDER = 'openai';
+    delete process.env.OPENAI_API_KEY;
+    try {
+      const res = await request(app)
+        .post('/api/eval/run')
+        .send({ promptTemplate: 'Hi', input: 'x', runs: 1 });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/OPENAI_API_KEY/);
+      expect(runEvalBatch).not.toHaveBeenCalled();
+    } finally {
+      if (previousProvider === undefined) delete process.env.LLM_PROVIDER;
+      else process.env.LLM_PROVIDER = previousProvider;
+      if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousKey;
     }
   });
 });
