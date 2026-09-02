@@ -3,13 +3,10 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
-import { OctavusClient, toSSEStream } from '@octavus/server-sdk';
 import {
   deriveTitle,
   readJsonFile,
   writeJsonFile,
-  buildSessionInput,
-  buildSessionRecord,
   filterModels,
   matchLocale,
   htmlLangFromLocale,
@@ -19,10 +16,10 @@ import {
   buildCapabilitiesPayload,
   loadCapabilities,
 } from './lib/model-capabilities.js';
-import { createAgentSession } from './lib/octavus-create.js';
 import { enqueueSessionsWrite } from './lib/sessions-file.js';
 import { MAX_EVAL_RUNS, MIN_EVAL_RUNS, runEvalBatch } from './lib/eval-run.js';
 import { runPromptComparison, MAX_EVAL_CASES } from './lib/eval-compare.js';
+import { createLlmProvider } from './lib/llm/provider.js';
 import {
   DEFAULT_METRIC_ID,
   isValidMetricId,
@@ -38,27 +35,22 @@ const I18N_DIR      = path.join(__dirname, 'i18n');
 const app = express();
 const PORT = Number.parseInt(process.env.PORT ?? '3000', 10) || 3000;
 
-// ── Octavus client ────────────────────────────────────────────
-const octavus = new OctavusClient({
-  baseUrl: process.env.OCTAVUS_API_URL,
-  apiKey: process.env.OCTAVUS_API_KEY,
-});
+const CHAT_UNAVAILABLE = 'Chat sessions are not available; this app uses the Claude API for evaluation only';
 
-// Which deployed agent the server talks to. Defaults to "prod" so existing
-// deployments that only set the legacy OCTAVUS_AGENT_ID keep hitting their
-// production agent with no .env changes. Local development opts into the dev
-// agent via `npm run dev` (which sets AGENT_TARGET=dev). When a target-specific
-// ID is missing we fall back to the legacy OCTAVUS_AGENT_ID.
-const AGENT_TARGET = (process.env.AGENT_TARGET ?? 'prod').toLowerCase();
-if (AGENT_TARGET !== 'prod' && AGENT_TARGET !== 'dev') {
-  throw new Error(
-    `Invalid AGENT_TARGET "${process.env.AGENT_TARGET}". Expected "prod" or "dev".`,
-  );
+/** @type {import('./lib/llm/types.js').LlmProvider | null | undefined} */
+let cachedLlm;
+
+/**
+ * Resolve the configured LLM provider. Missing ANTHROPIC_API_KEY is treated as
+ * "not configured" so eval routes can return 503 without crashing startup.
+ * @returns {import('./lib/llm/types.js').LlmProvider | null}
+ */
+
+function getLlm() {
+  if (!process.env.ANTHROPIC_API_KEY) return null;
+  if (!cachedLlm) cachedLlm = createLlmProvider(process.env);
+  return cachedLlm;
 }
-const AGENT_ID =
-  (AGENT_TARGET === 'prod'
-    ? process.env.OCTAVUS_AGENT_ID_PROD
-    : process.env.OCTAVUS_AGENT_ID_DEV) ?? process.env.OCTAVUS_AGENT_ID;
 
 // ── Middleware ────────────────────────────────────────────────
 app.use(express.json());
@@ -168,26 +160,6 @@ function updateSessionsFile(mutator) {
   });
 }
 
-async function createNewSession(options = {}) {
-  const config = await readConfig();
-  const input = buildSessionInput(options, config);
-  console.log('[session] Creating with input:', JSON.stringify(input));
-  // Dedicated HTTP pool — must not share the streaming trigger dispatcher.
-  const sessionId = await createAgentSession({
-    baseUrl: process.env.OCTAVUS_API_URL,
-    apiKey: process.env.OCTAVUS_API_KEY,
-    agentId: AGENT_ID,
-    input,
-  });
-  const record = buildSessionRecord(sessionId);
-  await updateSessionsFile((data) => {
-    // With history hidden there is only ever one conversation; drop the rest.
-    data.sessions = config.hideHistory ? [record] : [...data.sessions, record];
-    return data;
-  });
-  return record;
-}
-
 // ── GET /api/sessions ─────────────────────────────────────────
 // Lists all sessions (id, title, timestamps) sorted newest first.
 app.get('/api/sessions', async (req, res) => {
@@ -204,12 +176,9 @@ app.get('/api/sessions', async (req, res) => {
 });
 
 // ── GET /api/session ──────────────────────────────────────────
-// Returns a specific session by ?id=, the most recently updated, or creates one.
+// Returns a specific session by ?id= or the most recently updated.
+// Creating a new remote session is not available (Claude eval-only).
 app.get('/api/session', async (req, res) => {
-  if (!AGENT_ID) {
-    return res.status(503).json({ error: 'OCTAVUS_AGENT_ID is not configured' });
-  }
-
   const data = await readSessionsFile();
   const config = await readConfig();
 
@@ -235,33 +204,12 @@ app.get('/api/session', async (req, res) => {
     return res.json({ sessionId: latest.session_id, messages: latest.messages });
   }
 
-  // No stored session — create one
-  try {
-    const record = await createNewSession();
-    res.json({ sessionId: record.session_id, messages: [] });
-  } catch (err) {
-    console.error('[session] Error creating session:', err);
-    res.status(500).json({ error: 'Failed to create session' });
-  }
+  return res.status(501).json({ error: CHAT_UNAVAILABLE });
 });
 
 // ── POST /api/sessions ────────────────────────────────────────
-// Creates a brand-new Octavus session and adds it to the file.
-app.post('/api/sessions', async (req, res) => {
-  if (!AGENT_ID) {
-    return res.status(503).json({ error: 'OCTAVUS_AGENT_ID is not configured' });
-  }
-  try {
-    const record = await createNewSession({
-      model: req.body.model,
-      temperature: req.body.temperature,
-      thinking: req.body.thinking,
-    });
-    res.json({ sessionId: record.session_id, messages: [] });
-  } catch (err) {
-    console.error('[sessions] Error creating session:', err);
-    res.status(500).json({ error: 'Failed to create session' });
-  }
+app.post('/api/sessions', (_req, res) => {
+  res.status(501).json({ error: CHAT_UNAVAILABLE });
 });
 
 // ── DELETE /api/sessions/:sessionId ──────────────────────────
@@ -275,30 +223,8 @@ app.delete('/api/sessions/:sessionId', async (req, res) => {
 });
 
 // ── POST /api/session/fork ────────────────────────────────────
-// Creates a new Octavus session, seeds it with the supplied messages, and
-// removes the old session record.  Used by regenerate / edit-and-resend.
-app.post('/api/session/fork', async (req, res) => {
-  const { oldSessionId, messages, model, temperature, thinking } = req.body;
-  if (!oldSessionId || !Array.isArray(messages)) {
-    return res.status(400).json({ error: 'oldSessionId and messages[] are required' });
-  }
-
-  try {
-    const record = await createNewSession({ model, temperature, thinking });
-    await updateSessionsFile((data) => {
-      const idx = data.sessions.findIndex((s) => s.session_id === record.session_id);
-      if (idx >= 0) {
-        data.sessions[idx].messages = messages;
-        data.sessions[idx].updated_at = new Date().toISOString();
-      }
-      data.sessions = data.sessions.filter((s) => s.session_id !== oldSessionId);
-      return data;
-    });
-    res.json({ sessionId: record.session_id });
-  } catch (err) {
-    console.error('[session/fork] Error:', err);
-    res.status(500).json({ error: 'Failed to fork session' });
-  }
+app.post('/api/session/fork', (_req, res) => {
+  res.status(501).json({ error: CHAT_UNAVAILABLE });
 });
 
 // ── POST /api/session/save ────────────────────────────────────
@@ -342,52 +268,23 @@ app.post('/api/session/save', async (req, res) => {
 });
 
 // ── POST /api/upload-urls ─────────────────────────────────────
-// Proxies presigned S3 upload URL requests to Octavus.
-app.post('/api/upload-urls', async (req, res) => {
+app.post('/api/upload-urls', (req, res) => {
   const { sessionId, files } = req.body;
   if (!sessionId || !Array.isArray(files)) {
     return res.status(400).json({ error: 'sessionId and files[] are required' });
   }
-  try {
-    const result = await octavus.files.getUploadUrls(sessionId, files);
-    res.json(result);
-  } catch (err) {
-    console.error('[upload-urls] Error:', err);
-    res.status(500).json({ error: 'Failed to get upload URLs' });
-  }
+  return res.status(501).json({ error: CHAT_UNAVAILABLE });
 });
 
 // ── POST /api/trigger ─────────────────────────────────────────
-// Attaches to an existing session and streams the agent response as SSE.
-app.post('/api/trigger', async (req, res) => {
-  const { sessionId, ...payload } = req.body;
+app.post('/api/trigger', (req, res) => {
+  const { sessionId } = req.body;
 
   if (!sessionId) {
     return res.status(400).json({ error: 'sessionId is required' });
   }
 
-  const session = octavus.agentSessions.attach(sessionId);
-  const events = session.execute(payload);
-  const stream = toSSEStream(events);
-
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-
-  const reader = stream.getReader();
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      res.write(value);
-    }
-  } catch (err) {
-    console.error('[trigger] Stream error:', err);
-  } finally {
-    reader.releaseLock();
-    res.end();
-  }
+  return res.status(501).json({ error: CHAT_UNAVAILABLE });
 });
 
 // ── GET /api/eval/metrics ─────────────────────────────────────
@@ -397,11 +294,12 @@ app.get('/api/eval/metrics', (_req, res) => {
 });
 
 // ── POST /api/eval/run ────────────────────────────────────────
-// Prompt Evaluation Simulator: render template + input, create a fresh
-// Octavus session per run, optionally score outputs against expectedAnswer.
+// Prompt Evaluation Simulator: render template + input, run independent
+// LLM completions, optionally score outputs against expectedAnswer.
 app.post('/api/eval/run', async (req, res) => {
-  if (!AGENT_ID) {
-    return res.status(503).json({ error: 'OCTAVUS_AGENT_ID is not configured' });
+  const llm = getLlm();
+  if (!llm) {
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured' });
   }
 
   const { promptTemplate, input, runs, expectedAnswer, metricId } = req.body ?? {};
@@ -430,12 +328,7 @@ app.post('/api/eval/run', async (req, res) => {
 
   try {
     const batch = await runEvalBatch(
-      {
-        baseUrl: process.env.OCTAVUS_API_URL,
-        apiKey: process.env.OCTAVUS_API_KEY,
-        agentId: AGENT_ID,
-        octavus,
-      },
+      { llm },
       {
         promptTemplate,
         input: typeof input === 'string' ? input : '',
@@ -456,10 +349,11 @@ app.post('/api/eval/run', async (req, res) => {
 
 // ── POST /api/eval/compare ────────────────────────────────────
 // Evaluate Prompt A across cases; optionally compare with Prompt B under
-// identical conditions. Each run still uses a fresh session.
+// identical conditions. Each run is an independent LLM complete() call.
 app.post('/api/eval/compare', async (req, res) => {
-  if (!AGENT_ID) {
-    return res.status(503).json({ error: 'OCTAVUS_AGENT_ID is not configured' });
+  const llm = getLlm();
+  if (!llm) {
+    return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured' });
   }
 
   const {
@@ -510,12 +404,7 @@ app.post('/api/eval/compare', async (req, res) => {
 
   try {
     const result = await runPromptComparison(
-      {
-        baseUrl: process.env.OCTAVUS_API_URL,
-        apiKey: process.env.OCTAVUS_API_KEY,
-        agentId: AGENT_ID,
-        octavus,
-      },
+      { llm },
       {
         prompts: [
           {
@@ -553,10 +442,8 @@ app.post('/api/eval/compare', async (req, res) => {
 if (process.env.NODE_ENV !== 'test') {
   const server = app.listen(PORT, () => {
     console.log(`Prompt Evaluation Simulator at http://localhost:${PORT}`);
-    console.log(`[agent] target=${AGENT_TARGET}${AGENT_ID ? ` (agent ${AGENT_ID})` : ''}`);
-    if (!AGENT_ID) {
-      const expected = `OCTAVUS_AGENT_ID_${AGENT_TARGET.toUpperCase()}`;
-      console.warn(`[WARN] ${expected} is not set — evaluation will not work until it is configured.`);
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.warn('[WARN] ANTHROPIC_API_KEY is not set — evaluation will not work until it is configured.');
     }
   });
   server.on('error', (err) => {

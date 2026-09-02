@@ -2,7 +2,7 @@
 
 A CodeSignal learning project that teaches how to **evaluate** LLM prompts — not only how to write them.
 
-Learners run the same prompt template against an input across multiple **independent** Octavus sessions, then score outputs against an optional expected answer using simple metrics.
+Learners run the same prompt template against an input across multiple **independent** Claude API calls, then score outputs against an optional expected answer using simple metrics.
 
 ## Milestone status
 
@@ -21,14 +21,7 @@ npm install
 cp .env.example .env
 ```
 
-Fill in `.env` with your Octavus API key and the **Prompt Eval** agent IDs (not the Cosmo Tutor agent).
-
-Validate / sync the in-repo agent definition:
-
-```bash
-npm run validate:agent
-npx octavus --env .env sync ./agents/prompt-eval
-```
+Fill in `.env` with your Anthropic API key (`ANTHROPIC_API_KEY`). Optionally set `ANTHROPIC_BASE_URL` and `ANTHROPIC_MODEL`.
 
 ## Run
 
@@ -47,6 +40,6 @@ npm test
 ## Stack
 
 - Node.js + Express
-- `@octavus/server-sdk` / `@octavus/client-sdk`
+- `@anthropic-ai/sdk` (Claude Messages API)
 - CodeSignal Bespoke Design System (git submodule)
 - Vanilla JS + esbuild

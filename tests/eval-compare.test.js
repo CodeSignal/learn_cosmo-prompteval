@@ -95,7 +95,7 @@ describe('runPromptComparison', () => {
       .mockResolvedValueOnce(mockBatch({ renderedPrompt: 'B: France', mean: 0, output: 'The capital is Paris.', score: 0 }));
 
     const result = await runPromptComparison(
-      { baseUrl: 'x', agentId: 'y', octavus: { agentSessions: { attach: vi.fn() } } },
+      { llm: { complete: vi.fn() } },
       {
         prompts: [
           { id: 'A', label: 'Prompt A', promptTemplate: 'A: {{input}}' },
@@ -134,7 +134,7 @@ describe('runPromptComparison', () => {
       .mockResolvedValueOnce(mockBatch({ renderedPrompt: 'B2', mean: 1, output: 'Tokyo', score: 1 }));
 
     const result = await runPromptComparison(
-      { baseUrl: 'x', agentId: 'y', octavus: { agentSessions: { attach: vi.fn() } } },
+      { llm: { complete: vi.fn() } },
       {
         prompts: [
           { id: 'A', label: 'Prompt A', promptTemplate: 'A {{input}}' },
@@ -165,7 +165,7 @@ describe('runPromptComparison', () => {
       .mockResolvedValueOnce(mockBatch({ renderedPrompt: 'A: France', mean: 1, output: 'Paris', score: 1 }));
 
     const result = await runPromptComparison(
-      { baseUrl: 'x', agentId: 'y', octavus: { agentSessions: { attach: vi.fn() } } },
+      { llm: { complete: vi.fn() } },
       {
         prompts: [{ id: 'A', label: 'Prompt', promptTemplate: 'A: {{input}}' }],
         input: 'France',
@@ -185,7 +185,7 @@ describe('runPromptComparison', () => {
   it('rejects an empty prompts list', async () => {
     await expect(
       runPromptComparison(
-        { baseUrl: 'x', agentId: 'y', octavus: { agentSessions: { attach: vi.fn() } } },
+        { llm: { complete: vi.fn() } },
         { prompts: [], runBatch: vi.fn() },
       ),
     ).rejects.toMatchObject({ code: 'NEED_PROMPTS' });

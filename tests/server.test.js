@@ -9,27 +9,12 @@ vi.mock('fs/promises', () => ({
   },
 }));
 
-vi.mock('@octavus/server-sdk', () => {
-  return {
-    OctavusClient: function () {
-      this.agentSessions = {
-        create: vi.fn().mockResolvedValue('new-session-id'),
-        attach: vi.fn().mockReturnValue({
-          execute: vi.fn(async function* () {
-            yield { type: 'text-delta', delta: 'mock-output' };
-          }),
-        }),
-      };
-      this.files = {
-        getUploadUrls: vi.fn().mockResolvedValue({ urls: [] }),
-      };
-    },
-    toSSEStream: vi.fn(),
-  };
-});
-
-vi.mock('../lib/octavus-create.js', () => ({
-  createAgentSession: vi.fn().mockResolvedValue('new-session-id'),
+vi.mock('../lib/llm/provider.js', () => ({
+  createLlmProvider: vi.fn(() => ({
+    name: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    complete: vi.fn().mockResolvedValue({ text: 'mock-output', requestId: 'msg-1' }),
+  })),
 }));
 
 vi.mock('../lib/eval-run.js', async (importOriginal) => {
@@ -51,26 +36,15 @@ vi.mock('../lib/eval-compare.js', async (importOriginal) => {
 vi.mock('dotenv/config', () => ({}));
 
 const fs = (await import('fs/promises')).default;
-const { createAgentSession } = await import('../lib/octavus-create.js');
 const { runEvalBatch } = await import('../lib/eval-run.js');
 const { runPromptComparison } = await import('../lib/eval-compare.js');
 
 // Set env vars before importing server
 process.env.NODE_ENV = 'test';
-process.env.OCTAVUS_API_URL = 'https://test.api';
-process.env.OCTAVUS_API_KEY = 'test-key';
-process.env.OCTAVUS_AGENT_ID = 'test-agent-id';
+process.env.ANTHROPIC_API_KEY = 'test-key';
+process.env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 
 const { app } = await import('../server.js');
-
-function mockSessionsFile(data = { sessions: [] }) {
-  fs.readFile.mockImplementation(async (path) => {
-    if (String(path).includes('chat-sessions')) return JSON.stringify(data);
-    if (String(path).includes('chat-config')) return '{}';
-    throw new Error('ENOENT');
-  });
-  fs.writeFile.mockResolvedValue(undefined);
-}
 
 // ── GET /api/config ───────────────────────────────────────────
 
@@ -263,45 +237,36 @@ describe('GET /api/session', () => {
     expect(res.status).toBe(200);
     expect(res.body.sessionId).toBe('newer');
   });
+
+  it('returns 501 when no stored session exists to resume', async () => {
+    fs.readFile.mockResolvedValue(JSON.stringify({ sessions: [] }));
+    const res = await request(app).get('/api/session');
+    expect(res.status).toBe(501);
+    expect(res.body.error).toMatch(/not available/i);
+  });
 });
 
 // ── POST /api/sessions ────────────────────────────────────────
 
 describe('POST /api/sessions', () => {
-  beforeEach(() => {
-    vi.resetAllMocks();
-    createAgentSession.mockResolvedValue('new-session-id');
-  });
-
-  it('creates via the dedicated Octavus create helper and persists the record', async () => {
-    mockSessionsFile({ sessions: [] });
-
+  it('returns 501 because remote chat sessions are not available', async () => {
     const res = await request(app)
       .post('/api/sessions')
       .send({ model: 'anthropic/claude-sonnet-4-6', temperature: 0.7, thinking: 'off' });
 
-    expect(res.status).toBe(200);
-    expect(res.body.sessionId).toBe('new-session-id');
-    expect(createAgentSession).toHaveBeenCalledOnce();
-    expect(createAgentSession.mock.calls[0][0]).toMatchObject({
-      baseUrl: 'https://test.api',
-      apiKey: 'test-key',
-      agentId: 'test-agent-id',
-    });
-
-    const written = JSON.parse(fs.writeFile.mock.calls[0][1]);
-    expect(written.sessions).toHaveLength(1);
-    expect(written.sessions[0].session_id).toBe('new-session-id');
+    expect(res.status).toBe(501);
+    expect(res.body.error).toMatch(/not available/i);
   });
+});
 
-  it('returns an error and does not persist when createAgentSession rejects', async () => {
-    mockSessionsFile({ sessions: [] });
-    createAgentSession.mockRejectedValueOnce(new Error('octavus down'));
+describe('POST /api/session/fork', () => {
+  it('returns 501 because remote chat sessions are not available', async () => {
+    const res = await request(app)
+      .post('/api/session/fork')
+      .send({ oldSessionId: 'old', messages: [] });
 
-    const res = await request(app).post('/api/sessions').send({});
-
-    expect(res.status).toBeGreaterThanOrEqual(400);
-    expect(fs.writeFile).not.toHaveBeenCalled();
+    expect(res.status).toBe(501);
+    expect(res.body.error).toMatch(/not available/i);
   });
 });
 
@@ -400,6 +365,14 @@ describe('POST /api/upload-urls', () => {
       .send({ sessionId: 's1' });
     expect(res.status).toBe(400);
   });
+
+  it('returns 501 when the body is valid', async () => {
+    const res = await request(app)
+      .post('/api/upload-urls')
+      .send({ sessionId: 's1', files: [{ name: 'a.txt' }] });
+    expect(res.status).toBe(501);
+    expect(res.body.error).toMatch(/not available/i);
+  });
 });
 
 // ── POST /api/trigger ─────────────────────────────────────────
@@ -410,6 +383,14 @@ describe('POST /api/trigger', () => {
       .post('/api/trigger')
       .send({ message: 'hello' });
     expect(res.status).toBe(400);
+  });
+
+  it('returns 501 when sessionId is present', async () => {
+    const res = await request(app)
+      .post('/api/trigger')
+      .send({ sessionId: 's1', message: 'hello' });
+    expect(res.status).toBe(501);
+    expect(res.body.error).toMatch(/not available/i);
   });
 });
 
@@ -482,6 +463,21 @@ describe('POST /api/eval/run', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/metricId/);
     expect(runEvalBatch).not.toHaveBeenCalled();
+  });
+
+  it('returns 503 when ANTHROPIC_API_KEY is missing', async () => {
+    const previous = process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    try {
+      const res = await request(app)
+        .post('/api/eval/run')
+        .send({ promptTemplate: 'Hi', input: 'x', runs: 1 });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/ANTHROPIC_API_KEY/);
+      expect(runEvalBatch).not.toHaveBeenCalled();
+    } finally {
+      process.env.ANTHROPIC_API_KEY = previous;
+    }
   });
 });
 
