@@ -503,6 +503,26 @@ describe('POST /api/eval/run', () => {
       else process.env.OPENAI_API_KEY = previousKey;
     }
   });
+
+  it('returns 503 when LLM_PROVIDER=gemini and GOOGLE_API_KEY is missing', async () => {
+    const previousProvider = process.env.LLM_PROVIDER;
+    const previousKey = process.env.GOOGLE_API_KEY;
+    process.env.LLM_PROVIDER = 'gemini';
+    delete process.env.GOOGLE_API_KEY;
+    try {
+      const res = await request(app)
+        .post('/api/eval/run')
+        .send({ promptTemplate: 'Hi', input: 'x', runs: 1 });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/GOOGLE_API_KEY/);
+      expect(runEvalBatch).not.toHaveBeenCalled();
+    } finally {
+      if (previousProvider === undefined) delete process.env.LLM_PROVIDER;
+      else process.env.LLM_PROVIDER = previousProvider;
+      if (previousKey === undefined) delete process.env.GOOGLE_API_KEY;
+      else process.env.GOOGLE_API_KEY = previousKey;
+    }
+  });
 });
 
 describe('GET /api/eval/metrics', () => {
