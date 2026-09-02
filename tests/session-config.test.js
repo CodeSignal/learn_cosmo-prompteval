@@ -66,6 +66,24 @@ describe('normalizeSessionConfig', () => {
     });
   });
 
+  it('caps initialSession cases at the configured maxCases', () => {
+    const result = normalizeSessionConfig({
+      defaults: { maxCases: 2 },
+      initialSession: {
+        cases: [
+          { input: 'France', expectedAnswer: 'Paris' },
+          { input: 'Japan', expectedAnswer: 'Tokyo' },
+          { input: 'Spain', expectedAnswer: 'Madrid' },
+        ],
+      },
+    });
+    expect(result.defaults.maxCases).toBe(2);
+    expect(result.initialSession.cases).toEqual([
+      { input: 'France', expectedAnswer: 'Paris' },
+      { input: 'Japan', expectedAnswer: 'Tokyo' },
+    ]);
+  });
+
   it('treats non-string prompts and a missing cases array as empty', () => {
     const result = normalizeSessionConfig({
       initialSession: { promptA: 1, promptB: null, cases: { input: 'x' } },
