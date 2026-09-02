@@ -73,6 +73,7 @@ describe('createLlmProvider', () => {
   it('strips anthropic/ from ANTHROPIC_MODEL and from complete() requests', async () => {
     createMock.mockResolvedValue({
       id: 'msg-1',
+      _request_id: 'req_abc',
       content: [{ type: 'text', text: 'Paris' }],
     });
 
@@ -90,7 +91,7 @@ describe('createLlmProvider', () => {
       temperature: 0.2,
     });
 
-    expect(result).toEqual({ text: 'Paris', requestId: 'msg-1' });
+    expect(result).toEqual({ text: 'Paris', requestId: 'req_abc' });
     expect(createMock).toHaveBeenCalledWith({
       model: 'claude-opus-4-6',
       max_tokens: 4096,
@@ -98,5 +99,21 @@ describe('createLlmProvider', () => {
       messages: [{ role: 'user', content: 'Capital of France?' }],
       temperature: 0.2,
     });
+  });
+
+  it('omits requestId when _request_id is not a string', async () => {
+    createMock.mockResolvedValue({
+      id: 'msg-1',
+      content: [{ type: 'text', text: 'Paris' }],
+    });
+
+    const llm = createAnthropicProvider({ ANTHROPIC_API_KEY: 'sk-test' });
+    const result = await llm.complete({
+      model: 'claude-sonnet-4-6',
+      messages: [{ role: 'user', content: 'Hi' }],
+    });
+
+    expect(result.text).toBe('Paris');
+    expect(result.requestId).toBeUndefined();
   });
 });

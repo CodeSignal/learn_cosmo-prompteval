@@ -44,7 +44,8 @@ process.env.NODE_ENV = 'test';
 process.env.ANTHROPIC_API_KEY = 'test-key';
 process.env.ANTHROPIC_BASE_URL = 'https://api.anthropic.com';
 
-const { app } = await import('../server.js');
+const { createLlmProvider } = await import('../lib/llm/provider.js');
+const { app, resetLlmCache } = await import('../server.js');
 
 // ── GET /api/config ───────────────────────────────────────────
 
@@ -479,6 +480,24 @@ describe('POST /api/eval/run', () => {
       process.env.ANTHROPIC_API_KEY = previous;
     }
   });
+
+  it('returns 503 when createLlmProvider throws a configuration error', async () => {
+    resetLlmCache();
+    const err = new Error('Unsupported LLM_PROVIDER "openai"');
+    err.code = 'LLM_UNSUPPORTED_PROVIDER';
+    createLlmProvider.mockImplementationOnce(() => {
+      throw err;
+    });
+
+    const res = await request(app)
+      .post('/api/eval/run')
+      .send({ promptTemplate: 'Hi', input: 'x', runs: 1 });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/Unsupported LLM_PROVIDER/);
+    expect(runEvalBatch).not.toHaveBeenCalled();
+    resetLlmCache();
+  });
 });
 
 describe('GET /api/eval/metrics', () => {
@@ -565,5 +584,23 @@ describe('POST /api/eval/compare', () => {
     expect(opts.prompts).toEqual([
       { id: 'A', label: 'Prompt', promptTemplate: 'Answer briefly.' },
     ]);
+  });
+
+  it('returns 503 when createLlmProvider throws a configuration error', async () => {
+    resetLlmCache();
+    const err = new Error('Unsupported LLM_PROVIDER "openai"');
+    err.code = 'LLM_UNSUPPORTED_PROVIDER';
+    createLlmProvider.mockImplementationOnce(() => {
+      throw err;
+    });
+
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({ promptA: 'Hi', input: 'x', runs: 1 });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error).toMatch(/Unsupported LLM_PROVIDER/);
+    expect(runPromptComparison).not.toHaveBeenCalled();
+    resetLlmCache();
   });
 });
