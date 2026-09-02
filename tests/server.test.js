@@ -127,7 +127,7 @@ describe('PUT /api/eval/session', () => {
     expect(res.body.session.cases).toHaveLength(5);
     expect(res.body.session.lastResult).toBeNull();
     expect(fs.writeFile).toHaveBeenCalledOnce();
-    expect(String(fs.writeFile.mock.calls[0][0])).toMatch(/\.eval-session\.json\.\d+\.tmp$/);
+    expect(String(fs.writeFile.mock.calls[0][0])).toMatch(/\.eval-session\.json\.\d+\.[0-9a-f-]{36}\.tmp$/);
     expect(fs.rename).toHaveBeenCalledOnce();
     expect(String(fs.rename.mock.calls[0][1])).toMatch(/eval-session\.json$/);
     const written = JSON.parse(fs.writeFile.mock.calls[0][1]);
