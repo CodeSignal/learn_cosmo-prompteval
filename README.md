@@ -35,6 +35,8 @@ Fill in `.env` for the provider you want:
 
 Without `session.config.json`, prompts and cases start empty and the UI uses the built-in 1–5 limits. Copy `session.config.example.json` to prefill the capital-city demo.
 
+Work-in-progress (prompts, cases, settings, and the last results) is stored in `eval-session.json`. That file is local and not checked in. A saved session wins over `initialSession` on reload.
+
 ## Run
 
 ```bash
