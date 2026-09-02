@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_METRIC_ID,
+  METRICS,
   getMetric,
   isValidMetricId,
-  listMetrics,
   scoreOutput,
   summarizeScores,
 } from '../lib/metrics/index.js';
@@ -11,7 +11,7 @@ import { levenshteinDistance } from '../lib/metrics/string-similarity.js';
 
 describe('metric registry', () => {
   it('lists the registered metrics', () => {
-    const ids = listMetrics().map((m) => m.id);
+    const ids = METRICS.map((m) => m.id);
     expect(ids).toEqual([
       'exact-match',
       'exact-match-ci',
