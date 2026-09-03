@@ -23,11 +23,15 @@ let cachedLlm;
 let cachedModel;
 
 /**
- * @returns {Promise<{ model: string, allowedModels: string[] }>}
+ * @returns {Promise<{ model: string, allowedModels: string[], allowUserModelSelection: boolean }>}
  */
 async function sessionLlmConfig() {
   const config = normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {}));
-  return { model: config.model, allowedModels: config.allowedModels };
+  return {
+    model: config.model,
+    allowedModels: config.allowedModels,
+    allowUserModelSelection: config.allowUserModelSelection,
+  };
 }
 
 /**
@@ -52,11 +56,18 @@ function getLlm(model, allowedModels) {
  * Resolve a provider for an eval route without letting createLlmProvider()
  * throws escape Express 4 async handlers as unhandled rejections.
  * @param {import('express').Response} res
+ * @param {unknown} requestedModel
  * @returns {Promise<import('./lib/llm/types.js').LlmProvider | null>}
  */
-async function resolveLlm(res) {
+async function resolveLlm(res, requestedModel) {
   try {
-    const { model, allowedModels } = await sessionLlmConfig();
+    const config = await sessionLlmConfig();
+    const model = config.allowUserModelSelection
+      && typeof requestedModel === 'string'
+      && requestedModel.trim()
+      ? requestedModel.trim()
+      : config.model;
+    const { allowedModels } = config;
     const llm = getLlm(model, allowedModels);
     if (!llm) {
       res.status(503).json({ error: `${requiredApiKeyName(model)} is not configured` });
@@ -124,7 +135,7 @@ app.put('/api/eval/session', async (req, res) => {
 // Evaluate Prompt A across cases; optionally compare with Prompt B under
 // identical conditions. Each run is an independent LLM complete() call.
 app.post('/api/eval/compare', async (req, res) => {
-  const llm = await resolveLlm(res);
+  const llm = await resolveLlm(res, req.body?.model);
   if (!llm) return;
 
   const {

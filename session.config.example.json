@@ -5,6 +5,7 @@
     "openai/gpt-5.6-luna",
     "google/gemini-3.6-flash"
   ],
+  "allowUserModelSelection": true,
   "defaults": {
     "minRuns": 1,
     "maxRuns": 5,

@@ -13,12 +13,14 @@ describe('normalizeSessionConfig', () => {
     expect(normalizeSessionConfig(undefined)).toEqual({
       model: DEFAULT_MODEL_REF,
       allowedModels: [...DEFAULT_ALLOWED_MODELS],
+      allowUserModelSelection: false,
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
     });
     expect(normalizeSessionConfig({})).toEqual({
       model: DEFAULT_MODEL_REF,
       allowedModels: [...DEFAULT_ALLOWED_MODELS],
+      allowUserModelSelection: false,
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
     });
@@ -30,6 +32,15 @@ describe('normalizeSessionConfig', () => {
     }).model).toBe('google/gemini-3.6-flash');
     expect(normalizeSessionConfig({ model: '   ' }).model).toBe(DEFAULT_MODEL_REF);
     expect(normalizeSessionConfig({ model: 12 }).model).toBe(DEFAULT_MODEL_REF);
+  });
+
+  it('only enables user model selection for an explicit true value', () => {
+    expect(normalizeSessionConfig({ allowUserModelSelection: true }).allowUserModelSelection)
+      .toBe(true);
+    expect(normalizeSessionConfig({ allowUserModelSelection: false }).allowUserModelSelection)
+      .toBe(false);
+    expect(normalizeSessionConfig({ allowUserModelSelection: 'true' }).allowUserModelSelection)
+      .toBe(false);
   });
 
   it('defaults model to the first allowed entry when the default is not listed', () => {

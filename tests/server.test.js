@@ -60,6 +60,7 @@ describe('GET /api/eval/session', () => {
       const path = String(p);
       if (path.includes('eval-session.json')) {
         return JSON.stringify({
+          model: 'google/gemini-3.6-flash',
           promptA: 'A',
           promptB: 'B',
           compareMode: true,
@@ -75,6 +76,7 @@ describe('GET /api/eval/session', () => {
     const res = await request(app).get('/api/eval/session');
     expect(res.status).toBe(200);
     expect(res.body.session.promptA).toBe('A');
+    expect(res.body.session.model).toBe('google/gemini-3.6-flash');
     expect(res.body.session.compareMode).toBe(true);
     expect(res.body.session.metricId).toBe('contains');
     expect(res.body.session.cases).toHaveLength(1);
@@ -96,6 +98,7 @@ describe('PUT /api/eval/session', () => {
     const res = await request(app)
       .put('/api/eval/session')
       .send({
+        model: 'openai/gpt-5.6-luna',
         promptA: 'Hello',
         compareMode: true,
         cases: [
@@ -113,6 +116,7 @@ describe('PUT /api/eval/session', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.session.promptA).toBe('Hello');
+    expect(res.body.session.model).toBe('openai/gpt-5.6-luna');
     expect(res.body.session.compareMode).toBe(true);
     expect(res.body.session.metricId).toBe('exact-match');
     expect(res.body.session.cases).toHaveLength(5);
@@ -123,6 +127,7 @@ describe('PUT /api/eval/session', () => {
     expect(String(fs.rename.mock.calls[0][1])).toMatch(/eval-session\.json$/);
     const written = JSON.parse(fs.writeFile.mock.calls[0][1]);
     expect(written.promptA).toBe('Hello');
+    expect(written.model).toBe('openai/gpt-5.6-luna');
     expect(written.cases).toHaveLength(5);
   });
 });
@@ -142,6 +147,7 @@ describe('GET /api/session-config', () => {
       'openai/gpt-5.6-luna',
       'google/gemini-3.6-flash',
     ]);
+    expect(res.body.allowUserModelSelection).toBe(false);
     expect(res.body.defaults).toEqual({
       minRuns: 1,
       maxRuns: 5,
@@ -164,6 +170,7 @@ describe('GET /api/session-config', () => {
             'anthropic/claude-sonnet-4-6',
             'google/gemini-3.6-flash',
           ],
+          allowUserModelSelection: true,
           defaults: { minRuns: 2, maxRuns: 4 },
           initialSession: {
             promptA: 'Prompt A',
@@ -181,6 +188,7 @@ describe('GET /api/session-config', () => {
       'anthropic/claude-sonnet-4-6',
       'google/gemini-3.6-flash',
     ]);
+    expect(res.body.allowUserModelSelection).toBe(true);
     expect(res.body.defaults.minRuns).toBe(2);
     expect(res.body.defaults.maxRuns).toBe(4);
     expect(res.body.initialSession.promptA).toBe('Prompt A');
@@ -223,6 +231,124 @@ describe('POST /api/eval/compare', () => {
         .send({ promptA: 'Hi', input: 'x', runs: 1 });
       expect(res.status).toBe(200);
       expect(createLlmProvider).toHaveBeenCalledWith(expect.anything(), 'openai/gpt-5.6-luna');
+    } finally {
+      if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousKey;
+      resetLlmCache();
+    }
+  });
+
+  it('uses a requested allowed model when user selection is enabled', async () => {
+    resetLlmCache();
+    createLlmProvider.mockClear();
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({
+          model: 'anthropic/claude-sonnet-4-6',
+          allowedModels: [
+            'anthropic/claude-sonnet-4-6',
+            'openai/gpt-5.6-luna',
+          ],
+          allowUserModelSelection: true,
+        });
+      }
+      throw new Error('ENOENT');
+    });
+    const previousKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    runPromptComparison.mockResolvedValue({
+      conditions: { metricId: null, runs: 1, caseCount: 1 },
+      cases: [],
+      prompts: [],
+      comparison: { outcome: 'unscored', winnerId: null, means: {} },
+    });
+
+    try {
+      const res = await request(app)
+        .post('/api/eval/compare')
+        .send({
+          model: 'openai/gpt-5.6-luna',
+          promptA: 'Hi',
+          input: 'x',
+          runs: 1,
+        });
+      expect(res.status).toBe(200);
+      expect(createLlmProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        'openai/gpt-5.6-luna',
+      );
+    } finally {
+      if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousKey;
+      resetLlmCache();
+    }
+  });
+
+  it('ignores a requested model when user selection is disabled', async () => {
+    resetLlmCache();
+    createLlmProvider.mockClear();
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({
+          model: 'anthropic/claude-sonnet-4-6',
+          allowedModels: ['anthropic/claude-sonnet-4-6'],
+          allowUserModelSelection: false,
+        });
+      }
+      throw new Error('ENOENT');
+    });
+    runPromptComparison.mockResolvedValue({
+      conditions: { metricId: null, runs: 1, caseCount: 1 },
+      cases: [],
+      prompts: [],
+      comparison: { outcome: 'unscored', winnerId: null, means: {} },
+    });
+
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({
+        model: 'openai/gpt-5.6-luna',
+        promptA: 'Hi',
+        input: 'x',
+        runs: 1,
+      });
+    expect(res.status).toBe(200);
+    expect(createLlmProvider).toHaveBeenCalledWith(
+      expect.anything(),
+      'anthropic/claude-sonnet-4-6',
+    );
+    resetLlmCache();
+  });
+
+  it('rejects a requested model outside allowedModels when selection is enabled', async () => {
+    resetLlmCache();
+    createLlmProvider.mockClear();
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({
+          model: 'anthropic/claude-sonnet-4-6',
+          allowedModels: ['anthropic/claude-sonnet-4-6'],
+          allowUserModelSelection: true,
+        });
+      }
+      throw new Error('ENOENT');
+    });
+    const previousKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+
+    try {
+      const res = await request(app)
+        .post('/api/eval/compare')
+        .send({
+          model: 'openai/gpt-5.6-luna',
+          promptA: 'Hi',
+          input: 'x',
+          runs: 1,
+        });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/not in allowedModels/);
+      expect(createLlmProvider).not.toHaveBeenCalled();
+      expect(runPromptComparison).not.toHaveBeenCalled();
     } finally {
       if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = previousKey;
