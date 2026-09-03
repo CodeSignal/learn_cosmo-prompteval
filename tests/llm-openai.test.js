@@ -34,11 +34,11 @@ describe('normalizeOpenAiModelId', () => {
 });
 
 describe('normalizeDeepSeekModelId', () => {
-  it('rewrites deepseek aliases to ~deepseek/…', () => {
+  it('preserves the supplied DeepSeek prefix', () => {
     expect(normalizeDeepSeekModelId('deepseek-v4-flash-latest'))
       .toBe('~deepseek/deepseek-v4-flash-latest');
     expect(normalizeDeepSeekModelId('deepseek/deepseek-v4-flash-latest'))
-      .toBe('~deepseek/deepseek-v4-flash-latest');
+      .toBe('deepseek/deepseek-v4-flash-latest');
     expect(normalizeDeepSeekModelId('~deepseek/deepseek-v4-flash-latest'))
       .toBe('~deepseek/deepseek-v4-flash-latest');
   });
@@ -180,10 +180,10 @@ describe('createLlmProvider deepseek', () => {
 
     expect(result).toEqual({ text: 'Paris', requestId: 'chatcmpl-ds' });
     expect(logSpy).toHaveBeenCalledWith(
-      '[llm] request {"provider":"deepseek","model":"~deepseek/deepseek-v4-flash-latest","baseURL":"https://api.deepseek.test/v1","messageCount":1}',
+      '[llm] request {"provider":"deepseek","model":"deepseek/deepseek-v4-flash-latest","baseURL":"https://api.deepseek.test/v1","messageCount":1}',
     );
     expect(createMock).toHaveBeenCalledWith({
-      model: '~deepseek/deepseek-v4-flash-latest',
+      model: 'deepseek/deepseek-v4-flash-latest',
       messages: [{ role: 'user', content: 'Capital of France?' }],
     });
     logSpy.mockRestore();
@@ -197,6 +197,25 @@ describe('createLlmProvider deepseek', () => {
     expect(constructorOpts).toHaveBeenCalledWith({
       apiKey: 'sk-deepseek',
       baseURL: 'https://openrouter.ai/api/v1',
+    });
+  });
+
+  it('sends a deepseek/ model ref with its original prefix', async () => {
+    createMock.mockResolvedValue({
+      id: 'chatcmpl-ds-alias',
+      choices: [{ message: { content: 'Paris' } }],
+    });
+    const llm = createLlmProvider({
+      DEEPSEEK_API_KEY: 'sk-deepseek',
+      DEEPSEEK_BASE_URL: 'https://api.deepseek.test/v1',
+    }, 'deepseek/deepseek-v4-flash-latest');
+
+    await llm.complete({ model: llm.model, messages: [{ role: 'user', content: 'Hi' }] });
+
+    expect(llm.model).toBe('deepseek/deepseek-v4-flash-latest');
+    expect(createMock).toHaveBeenCalledWith({
+      model: 'deepseek/deepseek-v4-flash-latest',
+      messages: [{ role: 'user', content: 'Hi' }],
     });
   });
 
