@@ -6,6 +6,7 @@ import { FALLBACK_DEFAULTS } from '../lib/session-config.js';
 describe('normalizeEvalSession', () => {
   it('returns an empty session when raw is missing or invalid', () => {
     const empty = {
+      model: '',
       promptA: '',
       promptB: '',
       compareMode: false,
@@ -22,6 +23,7 @@ describe('normalizeEvalSession', () => {
   it('keeps valid fields and case ids', () => {
     const lastResult = { conditions: { runs: 1, caseCount: 1 }, prompts: [], cases: [], comparison: {} };
     const result = normalizeEvalSession({
+      model: '  google/gemini-3.6-flash  ',
       promptA: 'A',
       promptB: 'B',
       compareMode: true,
@@ -31,6 +33,7 @@ describe('normalizeEvalSession', () => {
       lastResult,
     });
     expect(result).toEqual({
+      model: 'google/gemini-3.6-flash',
       promptA: 'A',
       promptB: 'B',
       compareMode: true,

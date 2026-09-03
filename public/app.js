@@ -5,7 +5,12 @@
 
 import { isRenderableResult, normalizeEvalSession } from '../lib/eval-session.js';
 import { collectPromptScoresByCase } from '../lib/score-distribution.js';
-import { FALLBACK_DEFAULTS, normalizeSessionConfig } from '../lib/session-config.js';
+import { enqueueSessionsWrite } from '../lib/sessions-file.js';
+import {
+  FALLBACK_DEFAULTS,
+  findAllowedModel,
+  normalizeSessionConfig,
+} from '../lib/session-config.js';
 
 const promptAEl = document.getElementById('promptA');
 const promptBEl = document.getElementById('promptB');
@@ -21,6 +26,8 @@ const casesListEl = document.getElementById('casesList');
 const casesSummaryMeta = document.getElementById('casesSummaryMeta');
 const addCaseBtn = document.getElementById('addCaseBtn');
 const metricSelectEl = document.getElementById('metricSelect');
+const modelSelectWrap = document.getElementById('modelSelectWrap');
+const modelSelectEl = document.getElementById('modelSelect');
 const runCountEl = document.getElementById('runCount');
 const runCountLabel = document.getElementById('runCountLabel');
 const runBtn = document.getElementById('runBtn');
@@ -38,12 +45,16 @@ let MIN_RUNS = FALLBACK_DEFAULTS.minRuns;
 let MAX_RUNS = FALLBACK_DEFAULTS.maxRuns;
 let MIN_CASES = FALLBACK_DEFAULTS.minCases;
 let MAX_CASES = FALLBACK_DEFAULTS.maxCases;
+let ALLOW_USER_MODEL_SELECTION = false;
+let CONFIG_MODEL = '';
+let ALLOWED_MODELS = [];
 
 /** @type {ReturnType<typeof normalizeEvalSession>} */
 let session = normalizeEvalSession({});
 let persistEnabled = false;
 let saveTimer = null;
 const SAVE_DEBOUNCE_MS = 300;
+const persistWrite = { chain: Promise.resolve() };
 
 function sessionLimits() {
   return { minRuns: MIN_RUNS, maxRuns: MAX_RUNS, maxCases: MAX_CASES };
@@ -93,6 +104,7 @@ function setBusy(busy) {
   promptAEl.readOnly = busy;
   promptBEl.readOnly = busy;
   metricSelectEl.disabled = busy;
+  modelSelectEl.disabled = busy || !ALLOW_USER_MODEL_SELECTION;
   runCountEl.readOnly = busy;
   casesListEl.querySelectorAll('textarea, button').forEach((el) => {
     if (el.tagName === 'TEXTAREA') el.readOnly = busy;
@@ -433,7 +445,15 @@ async function runEvaluation() {
   showError('');
   pullSessionFromDom();
 
-  const { promptA, promptB, compareMode, cases, metricId, runs } = session;
+  const {
+    model,
+    promptA,
+    promptB,
+    compareMode,
+    cases,
+    metricId,
+    runs,
+  } = session;
   runCountEl.value = String(runs);
 
   if (!promptA.trim()) {
@@ -454,6 +474,7 @@ async function runEvaluation() {
   }
 
   const body = {
+    model,
     promptA,
     cases: cases.map((c, i) => ({
       id: c.id,
@@ -503,10 +524,33 @@ function applyDefaults(defaults) {
   }
 }
 
+function configureModelSelection(config) {
+  ALLOW_USER_MODEL_SELECTION = config.allowUserModelSelection;
+  CONFIG_MODEL = config.model;
+  ALLOWED_MODELS = config.allowedModels;
+
+  modelSelectEl.replaceChildren(...ALLOWED_MODELS.map((model) => {
+    const option = document.createElement('option');
+    option.value = model;
+    option.textContent = model;
+    return option;
+  }));
+  modelSelectWrap.hidden = !ALLOW_USER_MODEL_SELECTION;
+  modelSelectEl.disabled = !ALLOW_USER_MODEL_SELECTION;
+}
+
+function resolveSessionModel(savedModel) {
+  if (!ALLOW_USER_MODEL_SELECTION) return CONFIG_MODEL;
+  return findAllowedModel(savedModel, ALLOWED_MODELS)
+    ?? findAllowedModel(CONFIG_MODEL, ALLOWED_MODELS)
+    ?? CONFIG_MODEL;
+}
+
 function pullSessionFromDom() {
   syncCasesFromDom();
   session = normalizeEvalSession({
     ...session,
+    model: ALLOW_USER_MODEL_SELECTION ? modelSelectEl.value : CONFIG_MODEL,
     promptA: promptAEl.value,
     promptB: promptBEl.value,
     compareMode: session.compareMode,
@@ -518,6 +562,10 @@ function pullSessionFromDom() {
 }
 
 function applySessionToDom() {
+  session.model = resolveSessionModel(session.model);
+  if (ALLOW_USER_MODEL_SELECTION) {
+    modelSelectEl.value = session.model;
+  }
   promptAEl.value = session.promptA;
   promptBEl.value = session.promptB;
   if ([...metricSelectEl.options].some((opt) => opt.value === session.metricId)) {
@@ -530,6 +578,7 @@ function applySessionToDom() {
 
 function applyInitialSession(initial) {
   session = normalizeEvalSession({
+    model: resolveSessionModel(''),
     promptA: initial.promptA,
     promptB: initial.promptB,
     compareMode: initial.promptB.trim() !== '',
@@ -547,15 +596,18 @@ function applyInitialSession(initial) {
 async function persistSession() {
   if (!persistEnabled) return;
   pullSessionFromDom();
+  const snapshot = JSON.parse(JSON.stringify(session));
   try {
-    const res = await fetch('/api/eval/session', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(session),
-    });
-    if (!res.ok) {
-      console.error('[eval] Failed to persist session:', res.status);
-    }
+    await enqueueSessionsWrite(async () => {
+      const res = await fetch('/api/eval/session', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot),
+      });
+      if (!res.ok) {
+        console.error('[eval] Failed to persist session:', res.status);
+      }
+    }, persistWrite);
   } catch (err) {
     console.error('[eval] Failed to persist session:', err);
   }
@@ -603,6 +655,7 @@ async function init() {
     loadEvalSession(),
   ]);
   applyDefaults(config.defaults);
+  configureModelSelection(config);
   if (saved) {
     session = normalizeEvalSession(saved, sessionLimits());
     applySessionToDom();
@@ -663,6 +716,11 @@ promptBEl.addEventListener('input', () => {
 
 metricSelectEl.addEventListener('change', () => {
   session.metricId = metricSelectEl.value;
+  persistSessionNow();
+});
+
+modelSelectEl.addEventListener('change', () => {
+  session.model = modelSelectEl.value;
   persistSessionNow();
 });
 
