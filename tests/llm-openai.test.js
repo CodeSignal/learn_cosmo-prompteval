@@ -224,15 +224,19 @@ describe('createLlmProvider deepseek', () => {
     });
   });
 
-  it('does not fall back when only DEEPSEEK_API_KEY is set', () => {
-    createLlmProvider({
+  it('requires DEEPSEEK_BASE_URL when DEEPSEEK_API_KEY is set', () => {
+    expect(() => createLlmProvider({
       DEEPSEEK_API_KEY: 'sk-deepseek',
       OPENAI_API_KEY: 'sk-openai',
       OPENAI_BASE_URL: 'https://api.openai.test/v1',
-    }, '~deepseek/deepseek-v4-flash-latest');
-    expect(constructorOpts).toHaveBeenCalledWith({
-      apiKey: 'sk-deepseek',
-    });
+    }, '~deepseek/deepseek-v4-flash-latest')).toThrow(/DEEPSEEK_BASE_URL/);
+    try {
+      createLlmProvider({
+        DEEPSEEK_API_KEY: 'sk-deepseek',
+      }, '~deepseek/deepseek-v4-flash-latest');
+    } catch (err) {
+      expect(err.code).toBe('LLM_NOT_CONFIGURED');
+    }
   });
 
   it('does not fall back when only DEEPSEEK_BASE_URL is set', () => {
