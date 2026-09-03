@@ -8,7 +8,7 @@ import { MAX_EVAL_RUNS, MIN_EVAL_RUNS } from './lib/eval-run.js';
 import { runPromptComparison, MAX_EVAL_CASES } from './lib/eval-compare.js';
 import { createLlmProvider, requiredApiKeyName } from './lib/llm/provider.js';
 import { DEFAULT_METRIC_ID, isValidMetricId } from './lib/metrics/index.js';
-import { assertAllowedModel, normalizeSessionConfig } from './lib/session-config.js';
+import { assertAllowedModel, findAllowedModel, normalizeSessionConfig } from './lib/session-config.js';
 import { normalizeEvalSession } from './lib/eval-session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -62,12 +62,13 @@ function getLlm(model, allowedModels) {
 async function resolveLlm(res, requestedModel) {
   try {
     const config = await sessionLlmConfig();
-    const model = config.allowUserModelSelection
+    const requested = config.allowUserModelSelection
       && typeof requestedModel === 'string'
       && requestedModel.trim()
       ? requestedModel.trim()
       : config.model;
     const { allowedModels } = config;
+    const model = findAllowedModel(requested, allowedModels) ?? requested;
     const llm = getLlm(model, allowedModels);
     if (!llm) {
       res.status(503).json({ error: `${requiredApiKeyName(model)} is not configured` });

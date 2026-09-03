@@ -320,6 +320,59 @@ describe('POST /api/eval/compare', () => {
     resetLlmCache();
   });
 
+  it('reuses the cached provider for equivalent google/ and gemini/ aliases', async () => {
+    resetLlmCache();
+    createLlmProvider.mockClear();
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({
+          model: 'google/gemini-3.6-flash',
+          allowedModels: ['google/gemini-3.6-flash'],
+          allowUserModelSelection: true,
+        });
+      }
+      throw new Error('ENOENT');
+    });
+    const previousKey = process.env.GOOGLE_API_KEY;
+    process.env.GOOGLE_API_KEY = 'test-google-key';
+    runPromptComparison.mockResolvedValue({
+      conditions: { metricId: null, runs: 1, caseCount: 1 },
+      cases: [],
+      prompts: [],
+      comparison: { outcome: 'unscored', winnerId: null, means: {} },
+    });
+
+    try {
+      const first = await request(app)
+        .post('/api/eval/compare')
+        .send({
+          model: 'gemini/gemini-3.6-flash',
+          promptA: 'Hi',
+          input: 'x',
+          runs: 1,
+        });
+      const second = await request(app)
+        .post('/api/eval/compare')
+        .send({
+          model: 'google/gemini-3.6-flash',
+          promptA: 'Hi',
+          input: 'x',
+          runs: 1,
+        });
+      expect(first.status).toBe(200);
+      expect(second.status).toBe(200);
+      expect(createLlmProvider).toHaveBeenCalledOnce();
+      expect(createLlmProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        'google/gemini-3.6-flash',
+      );
+    } finally {
+      if (previousKey === undefined) delete process.env.GOOGLE_API_KEY;
+      else process.env.GOOGLE_API_KEY = previousKey;
+      resetLlmCache();
+    }
+  });
+
   it('rejects a requested model outside allowedModels when selection is enabled', async () => {
     resetLlmCache();
     createLlmProvider.mockClear();

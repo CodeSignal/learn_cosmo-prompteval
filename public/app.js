@@ -5,6 +5,7 @@
 
 import { isRenderableResult, normalizeEvalSession } from '../lib/eval-session.js';
 import { collectPromptScoresByCase } from '../lib/score-distribution.js';
+import { enqueueSessionsWrite } from '../lib/sessions-file.js';
 import {
   FALLBACK_DEFAULTS,
   findAllowedModel,
@@ -53,6 +54,7 @@ let session = normalizeEvalSession({});
 let persistEnabled = false;
 let saveTimer = null;
 const SAVE_DEBOUNCE_MS = 300;
+const persistWrite = { chain: Promise.resolve() };
 
 function sessionLimits() {
   return { minRuns: MIN_RUNS, maxRuns: MAX_RUNS, maxCases: MAX_CASES };
@@ -541,7 +543,6 @@ function resolveSessionModel(savedModel) {
   if (!ALLOW_USER_MODEL_SELECTION) return CONFIG_MODEL;
   return findAllowedModel(savedModel, ALLOWED_MODELS)
     ?? findAllowedModel(CONFIG_MODEL, ALLOWED_MODELS)
-    ?? ALLOWED_MODELS[0]
     ?? CONFIG_MODEL;
 }
 
@@ -595,15 +596,18 @@ function applyInitialSession(initial) {
 async function persistSession() {
   if (!persistEnabled) return;
   pullSessionFromDom();
+  const snapshot = JSON.parse(JSON.stringify(session));
   try {
-    const res = await fetch('/api/eval/session', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(session),
-    });
-    if (!res.ok) {
-      console.error('[eval] Failed to persist session:', res.status);
-    }
+    await enqueueSessionsWrite(async () => {
+      const res = await fetch('/api/eval/session', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(snapshot),
+      });
+      if (!res.ok) {
+        console.error('[eval] Failed to persist session:', res.status);
+      }
+    }, persistWrite);
   } catch (err) {
     console.error('[eval] Failed to persist session:', err);
   }
