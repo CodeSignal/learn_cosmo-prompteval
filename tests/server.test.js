@@ -146,6 +146,7 @@ describe('GET /api/session-config', () => {
       'anthropic/claude-sonnet-4-6',
       'openai/gpt-5.6-luna',
       'google/gemini-3.6-flash',
+      '~deepseek/deepseek-v4-flash-latest',
     ]);
     expect(res.body.allowUserModelSelection).toBe(false);
     expect(res.body.defaults).toEqual({

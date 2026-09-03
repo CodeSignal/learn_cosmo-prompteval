@@ -66,6 +66,7 @@ describe('createLlmProvider', () => {
     expect(requiredApiKeyName(DEFAULT_MODEL_REF)).toBe('ANTHROPIC_API_KEY');
     expect(requiredApiKeyName('openai/gpt-5.6-luna')).toBe('OPENAI_API_KEY');
     expect(requiredApiKeyName('google/gemini-3.6-flash')).toBe('GOOGLE_API_KEY');
+    expect(requiredApiKeyName('~deepseek/deepseek-v4-flash-latest')).toBe('DEEPSEEK_API_KEY');
   });
 
   it('throws when ANTHROPIC_API_KEY is missing', () => {

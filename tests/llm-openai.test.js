@@ -17,6 +17,7 @@ vi.mock('openai', () => {
 const {
   createOpenAiProvider,
   normalizeOpenAiModelId,
+  normalizeDeepSeekModelId,
   extractCompletionText,
   DEFAULT_OPENAI_MODEL,
 } = await import('../lib/llm/openai.js');
@@ -29,6 +30,17 @@ describe('normalizeOpenAiModelId', () => {
 
   it('leaves a bare model id unchanged', () => {
     expect(normalizeOpenAiModelId('gpt-4o')).toBe('gpt-4o');
+  });
+});
+
+describe('normalizeDeepSeekModelId', () => {
+  it('rewrites deepseek aliases to ~deepseek/…', () => {
+    expect(normalizeDeepSeekModelId('deepseek-v4-flash-latest'))
+      .toBe('~deepseek/deepseek-v4-flash-latest');
+    expect(normalizeDeepSeekModelId('deepseek/deepseek-v4-flash-latest'))
+      .toBe('~deepseek/deepseek-v4-flash-latest');
+    expect(normalizeDeepSeekModelId('~deepseek/deepseek-v4-flash-latest'))
+      .toBe('~deepseek/deepseek-v4-flash-latest');
   });
 });
 
@@ -132,5 +144,65 @@ describe('createLlmProvider openai', () => {
       '[llm] error {"provider":"openai","model":"gpt-4o","message":"insufficient_quota","status":429,"code":"insufficient_quota","baseURL":"https://api.example.test/v1"}',
     );
     errorSpy.mockRestore();
+  });
+});
+
+describe('createLlmProvider deepseek', () => {
+  beforeEach(() => {
+    createMock.mockReset();
+    constructorOpts.mockReset();
+  });
+
+  it('uses the OpenAI SDK with DeepSeek env vars', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createMock.mockResolvedValue({
+      id: 'chatcmpl-ds',
+      choices: [{ message: { content: 'Paris' } }],
+    });
+
+    const llm = createLlmProvider({
+      DEEPSEEK_API_KEY: 'sk-deepseek',
+      DEEPSEEK_BASE_URL: 'https://api.deepseek.test/v1',
+      OPENAI_API_KEY: 'sk-openai',
+      OPENAI_BASE_URL: 'https://api.openai.test/v1',
+    }, '~deepseek/deepseek-v4-flash-latest');
+    expect(llm.name).toBe('deepseek');
+    expect(llm.model).toBe('~deepseek/deepseek-v4-flash-latest');
+    expect(constructorOpts).toHaveBeenCalledWith({
+      apiKey: 'sk-deepseek',
+      baseURL: 'https://api.deepseek.test/v1',
+    });
+
+    const result = await llm.complete({
+      model: 'deepseek/deepseek-v4-flash-latest',
+      messages: [{ role: 'user', content: 'Capital of France?' }],
+    });
+
+    expect(result).toEqual({ text: 'Paris', requestId: 'chatcmpl-ds' });
+    expect(logSpy).toHaveBeenCalledWith(
+      '[llm] request {"provider":"deepseek","model":"~deepseek/deepseek-v4-flash-latest","baseURL":"https://api.deepseek.test/v1","messageCount":1}',
+    );
+    expect(createMock).toHaveBeenCalledWith({
+      model: '~deepseek/deepseek-v4-flash-latest',
+      messages: [{ role: 'user', content: 'Capital of France?' }],
+    });
+    logSpy.mockRestore();
+  });
+
+  it('accepts a base URL that already ends in /chat/completions', () => {
+    createLlmProvider({
+      DEEPSEEK_API_KEY: 'sk-deepseek',
+      DEEPSEEK_BASE_URL: 'https://openrouter.ai/api/v1/chat/completions',
+    }, '~deepseek/deepseek-v4-flash-latest');
+    expect(constructorOpts).toHaveBeenCalledWith({
+      apiKey: 'sk-deepseek',
+      baseURL: 'https://openrouter.ai/api/v1',
+    });
+  });
+
+  it('throws when DEEPSEEK_API_KEY is missing', () => {
+    expect(() => createLlmProvider({
+      OPENAI_API_KEY: 'sk-openai',
+    }, 'deepseek/deepseek-v4-flash-latest')).toThrow(/DEEPSEEK_API_KEY/);
   });
 });

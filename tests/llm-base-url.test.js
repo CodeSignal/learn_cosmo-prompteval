@@ -46,6 +46,18 @@ describe('provider base URL', () => {
     expect(llm.name).toBe('anthropic');
   });
 
+  it('accepts an http DEEPSEEK_BASE_URL', () => {
+    const llm = createOpenAiProvider({
+      DEEPSEEK_API_KEY: 'sk-test',
+      DEEPSEEK_BASE_URL: 'http://localhost:8080',
+    }, 'deepseek-v4-flash-latest', {
+      name: 'deepseek',
+      apiKeyEnv: 'DEEPSEEK_API_KEY',
+      baseUrlEnv: 'DEEPSEEK_BASE_URL',
+    });
+    expect(llm.name).toBe('deepseek');
+  });
+
   it('accepts an http GOOGLE_BASE_URL', () => {
     const llm = createGeminiProvider({
       GOOGLE_API_KEY: 'sk-test',
