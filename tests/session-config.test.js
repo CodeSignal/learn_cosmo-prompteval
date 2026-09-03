@@ -168,4 +168,40 @@ describe('assertAllowedModel', () => {
       expect(err.message).toMatch(/openai\/gpt-4o/);
     }
   });
+
+  it('treats google/ and gemini/ as the same provider', () => {
+    expect(() => assertAllowedModel(
+      'gemini/gemini-3.6-flash',
+      ['google/gemini-3.6-flash'],
+    )).not.toThrow();
+  });
+
+  it('matches an allowed ref when the prefix casing differs', () => {
+    expect(() => assertAllowedModel(
+      'Google/gemini-3.6-flash',
+      ['google/gemini-3.6-flash'],
+    )).not.toThrow();
+  });
+
+  it('still rejects a different model id under the same provider', () => {
+    expect(() => assertAllowedModel(
+      'google/gemini-2.5-flash',
+      ['google/gemini-3.6-flash'],
+    )).toThrow(/not in allowedModels/);
+  });
+});
+
+describe('normalizeSessionConfig allowedModels', () => {
+  it('keeps raw configured refs rather than rewriting aliases', () => {
+    const result = normalizeSessionConfig({
+      model: 'gemini/gemini-3.6-flash',
+      allowedModels: ['GEMINI/gemini-3.6-flash', 'openai/gpt-5.6-luna'],
+    });
+    expect(result.model).toBe('gemini/gemini-3.6-flash');
+    expect(result.allowedModels).toEqual([
+      'GEMINI/gemini-3.6-flash',
+      'openai/gpt-5.6-luna',
+    ]);
+    expect(() => assertAllowedModel(result.model, result.allowedModels)).not.toThrow();
+  });
 });
