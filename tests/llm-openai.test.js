@@ -200,9 +200,50 @@ describe('createLlmProvider deepseek', () => {
     });
   });
 
-  it('throws when DEEPSEEK_API_KEY is missing', () => {
+  it('falls back to OPENAI_* when both DeepSeek env vars are unset (prod proxy hack)', () => {
+    createLlmProvider({
+      OPENAI_API_KEY: 'sk-openai',
+      OPENAI_BASE_URL: 'https://api.openai.test/v1',
+    }, '~deepseek/deepseek-v4-flash-latest');
+    expect(constructorOpts).toHaveBeenCalledWith({
+      apiKey: 'sk-openai',
+      baseURL: 'https://api.openai.test/v1',
+    });
+  });
+
+  it('falls back to OPENAI_* when both DeepSeek env vars are blank', () => {
+    createLlmProvider({
+      DEEPSEEK_API_KEY: '  ',
+      DEEPSEEK_BASE_URL: '',
+      OPENAI_API_KEY: 'sk-openai',
+      OPENAI_BASE_URL: 'https://api.openai.test/v1',
+    }, 'deepseek/deepseek-v4-flash-latest');
+    expect(constructorOpts).toHaveBeenCalledWith({
+      apiKey: 'sk-openai',
+      baseURL: 'https://api.openai.test/v1',
+    });
+  });
+
+  it('does not fall back when only DEEPSEEK_API_KEY is set', () => {
+    createLlmProvider({
+      DEEPSEEK_API_KEY: 'sk-deepseek',
+      OPENAI_API_KEY: 'sk-openai',
+      OPENAI_BASE_URL: 'https://api.openai.test/v1',
+    }, '~deepseek/deepseek-v4-flash-latest');
+    expect(constructorOpts).toHaveBeenCalledWith({
+      apiKey: 'sk-deepseek',
+    });
+  });
+
+  it('does not fall back when only DEEPSEEK_BASE_URL is set', () => {
     expect(() => createLlmProvider({
+      DEEPSEEK_BASE_URL: 'https://api.deepseek.test/v1',
       OPENAI_API_KEY: 'sk-openai',
     }, 'deepseek/deepseek-v4-flash-latest')).toThrow(/DEEPSEEK_API_KEY/);
+  });
+
+  it('throws when DeepSeek env is unset and OPENAI_API_KEY is also missing', () => {
+    expect(() => createLlmProvider({}, 'deepseek/deepseek-v4-flash-latest'))
+      .toThrow(/OPENAI_API_KEY/);
   });
 });

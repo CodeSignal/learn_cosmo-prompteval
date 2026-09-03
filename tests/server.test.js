@@ -239,6 +239,50 @@ describe('POST /api/eval/compare', () => {
     }
   });
 
+  it('uses OPENAI_API_KEY for a DeepSeek model when DEEPSEEK_* are unset', async () => {
+    resetLlmCache();
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({
+          model: '~deepseek/deepseek-v4-flash-latest',
+          allowedModels: ['~deepseek/deepseek-v4-flash-latest'],
+        });
+      }
+      throw new Error('ENOENT');
+    });
+    const previousOpenAi = process.env.OPENAI_API_KEY;
+    const previousDeepSeekKey = process.env.DEEPSEEK_API_KEY;
+    const previousDeepSeekUrl = process.env.DEEPSEEK_BASE_URL;
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    delete process.env.DEEPSEEK_API_KEY;
+    delete process.env.DEEPSEEK_BASE_URL;
+    runPromptComparison.mockResolvedValue({
+      conditions: { metricId: 'exact-match', runs: 1, caseCount: 1 },
+      cases: [],
+      prompts: [],
+      comparison: { outcome: 'unscored', winnerId: null, means: {} },
+    });
+
+    try {
+      const res = await request(app)
+        .post('/api/eval/compare')
+        .send({ promptA: 'Hi', input: 'x', runs: 1 });
+      expect(res.status).toBe(200);
+      expect(createLlmProvider).toHaveBeenCalledWith(
+        expect.anything(),
+        '~deepseek/deepseek-v4-flash-latest',
+      );
+    } finally {
+      if (previousOpenAi === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousOpenAi;
+      if (previousDeepSeekKey === undefined) delete process.env.DEEPSEEK_API_KEY;
+      else process.env.DEEPSEEK_API_KEY = previousDeepSeekKey;
+      if (previousDeepSeekUrl === undefined) delete process.env.DEEPSEEK_BASE_URL;
+      else process.env.DEEPSEEK_BASE_URL = previousDeepSeekUrl;
+      resetLlmCache();
+    }
+  });
+
   it('uses a requested allowed model when user selection is enabled', async () => {
     resetLlmCache();
     createLlmProvider.mockClear();
