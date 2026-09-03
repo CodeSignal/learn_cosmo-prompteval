@@ -136,6 +136,12 @@ describe('GET /api/session-config', () => {
     fs.readFile.mockRejectedValue(new Error('ENOENT'));
     const res = await request(app).get('/api/session-config');
     expect(res.status).toBe(200);
+    expect(res.body.model).toBe('anthropic/claude-sonnet-4-6');
+    expect(res.body.allowedModels).toEqual([
+      'anthropic/claude-sonnet-4-6',
+      'openai/gpt-5.6-luna',
+      'google/gemini-3.6-flash',
+    ]);
     expect(res.body.defaults).toEqual({
       minRuns: 1,
       maxRuns: 5,
@@ -153,6 +159,11 @@ describe('GET /api/session-config', () => {
     fs.readFile.mockImplementation(async (p) => {
       if (String(p).includes('session.config.json')) {
         return JSON.stringify({
+          model: 'google/gemini-3.6-flash',
+          allowedModels: [
+            'anthropic/claude-sonnet-4-6',
+            'google/gemini-3.6-flash',
+          ],
           defaults: { minRuns: 2, maxRuns: 4 },
           initialSession: {
             promptA: 'Prompt A',
@@ -165,6 +176,11 @@ describe('GET /api/session-config', () => {
     });
     const res = await request(app).get('/api/session-config');
     expect(res.status).toBe(200);
+    expect(res.body.model).toBe('google/gemini-3.6-flash');
+    expect(res.body.allowedModels).toEqual([
+      'anthropic/claude-sonnet-4-6',
+      'google/gemini-3.6-flash',
+    ]);
     expect(res.body.defaults.minRuns).toBe(2);
     expect(res.body.defaults.maxRuns).toBe(4);
     expect(res.body.initialSession.promptA).toBe('Prompt A');
@@ -178,6 +194,40 @@ describe('GET /api/session-config', () => {
 describe('POST /api/eval/compare', () => {
   beforeEach(() => {
     runPromptComparison.mockReset();
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) return '{}';
+      throw new Error('ENOENT');
+    });
+  });
+
+  it('creates the LLM from the session.config.json model ref', async () => {
+    resetLlmCache();
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({ model: 'openai/gpt-5.6-luna' });
+      }
+      throw new Error('ENOENT');
+    });
+    const previousKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    runPromptComparison.mockResolvedValue({
+      conditions: { metricId: 'exact-match', runs: 1, caseCount: 1 },
+      cases: [],
+      prompts: [],
+      comparison: { outcome: 'unscored', winnerId: null, means: {} },
+    });
+
+    try {
+      const res = await request(app)
+        .post('/api/eval/compare')
+        .send({ promptA: 'Hi', input: 'x', runs: 1 });
+      expect(res.status).toBe(200);
+      expect(createLlmProvider).toHaveBeenCalledWith(expect.anything(), 'openai/gpt-5.6-luna');
+    } finally {
+      if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousKey;
+      resetLlmCache();
+    }
   });
 
   it('returns 400 when promptA is missing', async () => {
@@ -268,7 +318,7 @@ describe('POST /api/eval/compare', () => {
 
   it('returns 503 when createLlmProvider throws a configuration error', async () => {
     resetLlmCache();
-    const err = new Error('Unsupported LLM_PROVIDER "gemini"');
+    const err = new Error('Unsupported model provider "mistral"');
     err.code = 'LLM_UNSUPPORTED_PROVIDER';
     createLlmProvider.mockImplementationOnce(() => {
       throw err;
@@ -279,15 +329,19 @@ describe('POST /api/eval/compare', () => {
       .send({ promptA: 'Hi', input: 'x', runs: 1 });
 
     expect(res.status).toBe(503);
-    expect(res.body.error).toMatch(/Unsupported LLM_PROVIDER/);
+    expect(res.body.error).toMatch(/Unsupported model provider/);
     expect(runPromptComparison).not.toHaveBeenCalled();
     resetLlmCache();
   });
 
-  it('returns 503 when LLM_PROVIDER=openai and OPENAI_API_KEY is missing', async () => {
-    const previousProvider = process.env.LLM_PROVIDER;
+  it('returns 503 when model is openai/… and OPENAI_API_KEY is missing', async () => {
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({ model: 'openai/gpt-5.6-luna' });
+      }
+      throw new Error('ENOENT');
+    });
     const previousKey = process.env.OPENAI_API_KEY;
-    process.env.LLM_PROVIDER = 'openai';
     delete process.env.OPENAI_API_KEY;
     try {
       const res = await request(app)
@@ -297,17 +351,19 @@ describe('POST /api/eval/compare', () => {
       expect(res.body.error).toMatch(/OPENAI_API_KEY/);
       expect(runPromptComparison).not.toHaveBeenCalled();
     } finally {
-      if (previousProvider === undefined) delete process.env.LLM_PROVIDER;
-      else process.env.LLM_PROVIDER = previousProvider;
       if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
       else process.env.OPENAI_API_KEY = previousKey;
     }
   });
 
-  it('returns 503 when LLM_PROVIDER=gemini and GOOGLE_API_KEY is missing', async () => {
-    const previousProvider = process.env.LLM_PROVIDER;
+  it('returns 503 when model is google/… and GOOGLE_API_KEY is missing', async () => {
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({ model: 'google/gemini-3.6-flash' });
+      }
+      throw new Error('ENOENT');
+    });
     const previousKey = process.env.GOOGLE_API_KEY;
-    process.env.LLM_PROVIDER = 'gemini';
     delete process.env.GOOGLE_API_KEY;
     try {
       const res = await request(app)
@@ -317,10 +373,35 @@ describe('POST /api/eval/compare', () => {
       expect(res.body.error).toMatch(/GOOGLE_API_KEY/);
       expect(runPromptComparison).not.toHaveBeenCalled();
     } finally {
-      if (previousProvider === undefined) delete process.env.LLM_PROVIDER;
-      else process.env.LLM_PROVIDER = previousProvider;
       if (previousKey === undefined) delete process.env.GOOGLE_API_KEY;
       else process.env.GOOGLE_API_KEY = previousKey;
+    }
+  });
+
+  it('returns 503 when model is not in allowedModels', async () => {
+    createLlmProvider.mockClear();
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({
+          model: 'openai/gpt-4o',
+          allowedModels: ['google/gemini-3.6-flash'],
+        });
+      }
+      throw new Error('ENOENT');
+    });
+    const previousKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = 'test-openai-key';
+    try {
+      const res = await request(app)
+        .post('/api/eval/compare')
+        .send({ promptA: 'Hi', input: 'x', runs: 1 });
+      expect(res.status).toBe(503);
+      expect(res.body.error).toMatch(/not in allowedModels/);
+      expect(runPromptComparison).not.toHaveBeenCalled();
+      expect(createLlmProvider).not.toHaveBeenCalled();
+    } finally {
+      if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previousKey;
     }
   });
 });
