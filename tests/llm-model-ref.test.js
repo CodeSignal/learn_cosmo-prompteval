@@ -40,6 +40,21 @@ describe('parseModelRef', () => {
     });
   });
 
+  it('routes deepseek/ and ~deepseek/ to the same OpenAI-compatible provider', () => {
+    expect(parseModelRef('deepseek/deepseek-v4-flash-latest')).toMatchObject({
+      provider: 'deepseek',
+      modelId: 'deepseek-v4-flash-latest',
+      prefix: 'deepseek',
+      apiKeyName: 'DEEPSEEK_API_KEY',
+    });
+    expect(parseModelRef('~deepseek/deepseek-v4-flash-latest')).toMatchObject({
+      provider: 'deepseek',
+      modelId: 'deepseek-v4-flash-latest',
+      prefix: 'deepseek',
+      apiKeyName: 'DEEPSEEK_API_KEY',
+    });
+  });
+
   it('trims whitespace and lowercases the prefix', () => {
     expect(parseModelRef('  OpenAI/gpt-5.6-luna  ')).toMatchObject({
       provider: 'openai',
@@ -81,5 +96,7 @@ describe('requiredApiKeyName', () => {
     expect(requiredApiKeyName(DEFAULT_MODEL_REF)).toBe('ANTHROPIC_API_KEY');
     expect(requiredApiKeyName('openai/gpt-5.6-luna')).toBe('OPENAI_API_KEY');
     expect(requiredApiKeyName('google/gemini-3.6-flash')).toBe('GOOGLE_API_KEY');
+    expect(requiredApiKeyName('deepseek/deepseek-v4-flash-latest')).toBe('DEEPSEEK_API_KEY');
+    expect(requiredApiKeyName('~deepseek/deepseek-v4-flash-latest')).toBe('DEEPSEEK_API_KEY');
   });
 });

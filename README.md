@@ -27,11 +27,12 @@ Fill in `.env` with the API key (and optional `*_BASE_URL`) for the provider you
 - `anthropic/claude-sonnet-4-6` — needs `ANTHROPIC_API_KEY`, optional `ANTHROPIC_BASE_URL`
 - `openai/gpt-5.6-luna` — needs `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`
 - `google/gemini-3.6-flash` — needs `GOOGLE_API_KEY`, optional `GOOGLE_BASE_URL` (`gemini/…` also routes to Gemini)
+- `~deepseek/deepseek-v4-flash-latest` — needs `DEEPSEEK_API_KEY` and `DEEPSEEK_BASE_URL` (`deepseek/…` also routes here; uses the OpenAI SDK). If both DeepSeek vars are unset, it reuses `OPENAI_API_KEY` / `OPENAI_BASE_URL` (production proxy hack).
 
 `session.config.json` is separate from `.env`. It is local (not checked in) and holds **session defaults**, not secrets:
 
 - `model` (optional) — `provider/model-id` (default `anthropic/claude-sonnet-4-6`); must be listed in `allowedModels`
-- `allowedModels` (optional) — picker list of `provider/model-id` refs (defaults to Anthropic, OpenAI, and Gemini examples above)
+- `allowedModels` (optional) — picker list of `provider/model-id` refs (defaults to Anthropic, OpenAI, Gemini, and DeepSeek examples above)
 - `allowUserModelSelection` (optional) — when `true`, show a model picker and let the saved eval session override `model` with an entry from `allowedModels` (default `false`)
 - `defaults` (optional) — `minRuns`, `maxRuns`, `minCases`, `maxCases` (each 1–5)
 - `initialSession` (optional) — `promptA`, `promptB`, and `cases` (`input` / `expectedAnswer`)
@@ -57,6 +58,6 @@ npm test
 ## Stack
 
 - Node.js + Express
-- `@anthropic-ai/sdk` (Claude Messages API), `openai` (Chat Completions), or `@google/genai` (Gemini)
+- `@anthropic-ai/sdk` (Claude Messages API), `openai` (Chat Completions, including DeepSeek), or `@google/genai` (Gemini)
 - CodeSignal Bespoke Design System (git submodule)
 - Vanilla JS + esbuild

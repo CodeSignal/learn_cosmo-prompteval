@@ -187,6 +187,20 @@ describe('assertAllowedModel', () => {
     )).not.toThrow();
   });
 
+  it('treats deepseek/ and ~deepseek/ as the same provider', () => {
+    expect(() => assertAllowedModel(
+      'deepseek/deepseek-v4-flash-latest',
+      ['~deepseek/deepseek-v4-flash-latest'],
+    )).not.toThrow();
+  });
+
+  it('does not treat openai/ and deepseek/ as the same provider', () => {
+    expect(() => assertAllowedModel(
+      'deepseek/gpt-4o',
+      ['openai/gpt-4o'],
+    )).toThrow(/not in allowedModels/);
+  });
+
   it('matches an allowed ref when the prefix casing differs', () => {
     expect(() => assertAllowedModel(
       'Google/gemini-3.6-flash',
