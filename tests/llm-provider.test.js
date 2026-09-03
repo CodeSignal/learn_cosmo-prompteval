@@ -20,6 +20,7 @@ const {
   DEFAULT_ANTHROPIC_MODEL,
 } = await import('../lib/llm/anthropic.js');
 const { createLlmProvider, requiredApiKeyName } = await import('../lib/llm/provider.js');
+const { DEFAULT_MODEL_REF } = await import('../lib/llm/model-ref.js');
 
 describe('normalizeAnthropicModelId', () => {
   it('strips an anthropic/ prefix', () => {
@@ -54,21 +55,21 @@ describe('createLlmProvider', () => {
     expect(llm.model).toBe(DEFAULT_ANTHROPIC_MODEL);
   });
 
-  it('throws on an unknown provider', () => {
+  it('throws on an unknown provider prefix', () => {
     expect(() => createLlmProvider({
-      LLM_PROVIDER: 'mistral',
       ANTHROPIC_API_KEY: 'sk-test',
-    })).toThrow(/Unsupported LLM_PROVIDER "mistral"/);
+    }, 'mistral/large')).toThrow(/Unsupported model provider "mistral"/);
   });
 
-  it('reports the API key env var for the selected provider', () => {
-    expect(requiredApiKeyName({})).toBe('ANTHROPIC_API_KEY');
-    expect(requiredApiKeyName({ LLM_PROVIDER: 'openai' })).toBe('OPENAI_API_KEY');
-    expect(requiredApiKeyName({ LLM_PROVIDER: 'gemini' })).toBe('GOOGLE_API_KEY');
+  it('reports the API key env var for the selected model', () => {
+    expect(requiredApiKeyName()).toBe('ANTHROPIC_API_KEY');
+    expect(requiredApiKeyName(DEFAULT_MODEL_REF)).toBe('ANTHROPIC_API_KEY');
+    expect(requiredApiKeyName('openai/gpt-5.6-luna')).toBe('OPENAI_API_KEY');
+    expect(requiredApiKeyName('google/gemini-3.6-flash')).toBe('GOOGLE_API_KEY');
   });
 
   it('throws when ANTHROPIC_API_KEY is missing', () => {
-    expect(() => createLlmProvider({ LLM_PROVIDER: 'anthropic' })).toThrow(/ANTHROPIC_API_KEY/);
+    expect(() => createLlmProvider({}, 'anthropic/claude-sonnet-4-6')).toThrow(/ANTHROPIC_API_KEY/);
     try {
       createAnthropicProvider({});
     } catch (err) {
@@ -76,7 +77,7 @@ describe('createLlmProvider', () => {
     }
   });
 
-  it('strips anthropic/ from ANTHROPIC_MODEL and from complete() requests', async () => {
+  it('uses the model id from the session ref and strips anthropic/ on complete()', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     createMock.mockResolvedValue({
       id: 'msg-1',
@@ -87,8 +88,7 @@ describe('createLlmProvider', () => {
     const llm = createLlmProvider({
       ANTHROPIC_API_KEY: 'sk-test',
       ANTHROPIC_BASE_URL: 'https://api.example.test',
-      ANTHROPIC_MODEL: 'anthropic/claude-sonnet-4-6',
-    });
+    }, 'anthropic/claude-sonnet-4-6');
     expect(llm.model).toBe('claude-sonnet-4-6');
 
     const result = await llm.complete({

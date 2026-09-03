@@ -8,7 +8,7 @@ import { MAX_EVAL_RUNS, MIN_EVAL_RUNS } from './lib/eval-run.js';
 import { runPromptComparison, MAX_EVAL_CASES } from './lib/eval-compare.js';
 import { createLlmProvider, requiredApiKeyName } from './lib/llm/provider.js';
 import { DEFAULT_METRIC_ID, isValidMetricId } from './lib/metrics/index.js';
-import { normalizeSessionConfig } from './lib/session-config.js';
+import { assertAllowedModel, normalizeSessionConfig } from './lib/session-config.js';
 import { normalizeEvalSession } from './lib/eval-session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -19,16 +19,32 @@ const PORT = Number.parseInt(process.env.PORT ?? '3000', 10) || 3000;
 
 /** @type {import('./lib/llm/types.js').LlmProvider | null | undefined} */
 let cachedLlm;
+/** @type {string | undefined} */
+let cachedModel;
+
+/**
+ * @returns {Promise<{ model: string, allowedModels: string[] }>}
+ */
+async function sessionLlmConfig() {
+  const config = normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {}));
+  return { model: config.model, allowedModels: config.allowedModels };
+}
 
 /**
  * Resolve the configured LLM provider. A missing provider API key is treated
  * as "not configured" so eval routes can return 503 without crashing startup.
+ * @param {string} model
+ * @param {string[]} allowedModels
  * @returns {import('./lib/llm/types.js').LlmProvider | null}
  */
-function getLlm() {
-  const keyName = requiredApiKeyName(process.env);
+function getLlm(model, allowedModels) {
+  const keyName = requiredApiKeyName(model);
+  assertAllowedModel(model, allowedModels);
   if (!process.env[keyName]) return null;
-  if (!cachedLlm) cachedLlm = createLlmProvider(process.env);
+  if (!cachedLlm || cachedModel !== model) {
+    cachedLlm = createLlmProvider(process.env, model);
+    cachedModel = model;
+  }
   return cachedLlm;
 }
 
@@ -36,13 +52,14 @@ function getLlm() {
  * Resolve a provider for an eval route without letting createLlmProvider()
  * throws escape Express 4 async handlers as unhandled rejections.
  * @param {import('express').Response} res
- * @returns {import('./lib/llm/types.js').LlmProvider | null}
+ * @returns {Promise<import('./lib/llm/types.js').LlmProvider | null>}
  */
-function resolveLlm(res) {
+async function resolveLlm(res) {
   try {
-    const llm = getLlm();
+    const { model, allowedModels } = await sessionLlmConfig();
+    const llm = getLlm(model, allowedModels);
     if (!llm) {
-      res.status(503).json({ error: `${requiredApiKeyName()} is not configured` });
+      res.status(503).json({ error: `${requiredApiKeyName(model)} is not configured` });
       return null;
     }
     return llm;
@@ -58,6 +75,7 @@ function resolveLlm(res) {
 /** Clear the cached provider. Used by tests when mocking createLlmProvider. */
 export function resetLlmCache() {
   cachedLlm = undefined;
+  cachedModel = undefined;
 }
 
 // ── Middleware ────────────────────────────────────────────────
@@ -65,7 +83,7 @@ app.use(express.json());
 app.use('/design-system', express.static(path.join(__dirname, 'design-system')));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Local eval session defaults (prompts, cases, UI min/max). Not secrets —
+// Local eval session defaults (model, prompts, cases, UI min/max). Not secrets —
 // those stay in .env. Missing file → empty initial session + built-in limits.
 app.get('/api/session-config', async (_req, res) => {
   const raw = await readJsonFile(SESSION_CONFIG_FILE, {});
@@ -106,7 +124,7 @@ app.put('/api/eval/session', async (req, res) => {
 // Evaluate Prompt A across cases; optionally compare with Prompt B under
 // identical conditions. Each run is an independent LLM complete() call.
 app.post('/api/eval/compare', async (req, res) => {
-  const llm = resolveLlm(res);
+  const llm = await resolveLlm(res);
   if (!llm) return;
 
   const {
@@ -193,11 +211,18 @@ app.post('/api/eval/compare', async (req, res) => {
 });
 
 if (process.env.NODE_ENV !== 'test') {
-  const server = app.listen(PORT, () => {
+  const server = app.listen(PORT, async () => {
     console.log(`Prompt Evaluation Simulator at http://localhost:${PORT}`);
-    const keyName = requiredApiKeyName();
-    if (!process.env[keyName]) {
-      console.warn(`[WARN] ${keyName} is not set — evaluation will not work until it is configured.`);
+    try {
+      const { model, allowedModels } = await sessionLlmConfig();
+      assertAllowedModel(model, allowedModels);
+      const keyName = requiredApiKeyName(model);
+      if (!process.env[keyName]) {
+        console.warn(`[WARN] ${keyName} is not set — evaluation will not work until it is configured.`);
+      }
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : 'LLM model is not configured';
+      console.warn(`[WARN] ${message}`);
     }
   });
   server.on('error', (err) => {

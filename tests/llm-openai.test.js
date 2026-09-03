@@ -59,17 +59,16 @@ describe('createLlmProvider openai', () => {
     constructorOpts.mockReset();
   });
 
-  it('selects openai when LLM_PROVIDER=openai', () => {
+  it('selects openai from an openai/ model ref', () => {
     const llm = createLlmProvider({
-      LLM_PROVIDER: 'openai',
       OPENAI_API_KEY: 'sk-test',
-    });
+    }, 'openai/gpt-4o');
     expect(llm.name).toBe('openai');
     expect(llm.model).toBe(DEFAULT_OPENAI_MODEL);
   });
 
   it('throws when OPENAI_API_KEY is missing', () => {
-    expect(() => createLlmProvider({ LLM_PROVIDER: 'openai' })).toThrow(/OPENAI_API_KEY/);
+    expect(() => createLlmProvider({}, 'openai/gpt-4o')).toThrow(/OPENAI_API_KEY/);
     try {
       createOpenAiProvider({});
     } catch (err) {
@@ -77,7 +76,7 @@ describe('createLlmProvider openai', () => {
     }
   });
 
-  it('strips openai/ from OPENAI_MODEL and from complete() requests', async () => {
+  it('uses the model id from the session ref and strips openai/ on complete()', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     createMock.mockResolvedValue({
       id: 'chatcmpl-1',
@@ -85,11 +84,9 @@ describe('createLlmProvider openai', () => {
     });
 
     const llm = createLlmProvider({
-      LLM_PROVIDER: 'openai',
       OPENAI_API_KEY: 'sk-test',
       OPENAI_BASE_URL: 'https://api.example.test/v1',
-      OPENAI_MODEL: 'openai/gpt-4o',
-    });
+    }, 'openai/gpt-4o');
     expect(llm.model).toBe('gpt-4o');
     expect(constructorOpts).toHaveBeenCalledWith({
       apiKey: 'sk-test',
@@ -124,10 +121,9 @@ describe('createLlmProvider openai', () => {
     createMock.mockRejectedValueOnce(err);
 
     const llm = createLlmProvider({
-      LLM_PROVIDER: 'openai',
       OPENAI_API_KEY: 'sk-test',
       OPENAI_BASE_URL: 'https://api.example.test/v1',
-    });
+    }, 'openai/gpt-4o');
     await expect(llm.complete({
       model: 'gpt-4o',
       messages: [{ role: 'user', content: 'Hi' }],

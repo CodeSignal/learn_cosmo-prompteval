@@ -67,17 +67,16 @@ describe('createLlmProvider gemini', () => {
     constructorOpts.mockReset();
   });
 
-  it('selects gemini when LLM_PROVIDER=gemini', () => {
+  it('selects gemini from a google/ model ref', () => {
     const llm = createLlmProvider({
-      LLM_PROVIDER: 'gemini',
       GOOGLE_API_KEY: 'sk-test',
-    });
+    }, 'google/gemini-2.5-flash');
     expect(llm.name).toBe('gemini');
     expect(llm.model).toBe(DEFAULT_GEMINI_MODEL);
   });
 
   it('throws when GOOGLE_API_KEY is missing', () => {
-    expect(() => createLlmProvider({ LLM_PROVIDER: 'gemini' })).toThrow(/GOOGLE_API_KEY/);
+    expect(() => createLlmProvider({}, 'google/gemini-2.5-flash')).toThrow(/GOOGLE_API_KEY/);
     try {
       createGeminiProvider({});
     } catch (err) {
@@ -85,7 +84,7 @@ describe('createLlmProvider gemini', () => {
     }
   });
 
-  it('strips google/ from GOOGLE_MODEL and from complete() requests', async () => {
+  it('uses the model id from the session ref and strips google/ on complete()', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     generateContent.mockResolvedValue({
       text: 'Paris',
@@ -93,11 +92,9 @@ describe('createLlmProvider gemini', () => {
     });
 
     const llm = createLlmProvider({
-      LLM_PROVIDER: 'gemini',
       GOOGLE_API_KEY: 'sk-test',
       GOOGLE_BASE_URL: 'https://generativelanguage.example.test',
-      GOOGLE_MODEL: 'google/gemini-2.5-flash',
-    });
+    }, 'google/gemini-2.5-flash');
     expect(llm.model).toBe('gemini-2.5-flash');
     expect(constructorOpts).toHaveBeenCalledWith({
       apiKey: 'sk-test',
@@ -132,10 +129,9 @@ describe('createLlmProvider gemini', () => {
     generateContent.mockRejectedValueOnce(err);
 
     const llm = createLlmProvider({
-      LLM_PROVIDER: 'gemini',
       GOOGLE_API_KEY: 'sk-test',
       GOOGLE_BASE_URL: 'https://generativelanguage.example.test',
-    });
+    }, 'google/gemini-2.5-flash');
     await expect(llm.complete({
       model: 'gemini-2.5-flash',
       messages: [{ role: 'user', content: 'Hi' }],
