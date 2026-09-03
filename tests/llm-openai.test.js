@@ -41,6 +41,8 @@ describe('normalizeDeepSeekModelId', () => {
       .toBe('deepseek/deepseek-v4-flash-latest');
     expect(normalizeDeepSeekModelId('~deepseek/deepseek-v4-flash-latest'))
       .toBe('~deepseek/deepseek-v4-flash-latest');
+    expect(normalizeDeepSeekModelId('deepseek-ai/deepseek-v4-flash-latest'))
+      .toBe('deepseek-ai/deepseek-v4-flash-latest');
   });
 });
 
@@ -215,6 +217,25 @@ describe('createLlmProvider deepseek', () => {
     expect(llm.model).toBe('deepseek/deepseek-v4-flash-latest');
     expect(createMock).toHaveBeenCalledWith({
       model: 'deepseek/deepseek-v4-flash-latest',
+      messages: [{ role: 'user', content: 'Hi' }],
+    });
+  });
+
+  it('sends a deepseek-ai/ model ref with its original prefix', async () => {
+    createMock.mockResolvedValue({
+      id: 'chatcmpl-ds-ai',
+      choices: [{ message: { content: 'Paris' } }],
+    });
+    const llm = createLlmProvider({
+      DEEPSEEK_API_KEY: 'sk-deepseek',
+      DEEPSEEK_BASE_URL: 'https://api.deepseek.test/v1',
+    }, 'deepseek-ai/deepseek-v4-flash-latest');
+
+    await llm.complete({ model: llm.model, messages: [{ role: 'user', content: 'Hi' }] });
+
+    expect(llm.model).toBe('deepseek-ai/deepseek-v4-flash-latest');
+    expect(createMock).toHaveBeenCalledWith({
+      model: 'deepseek-ai/deepseek-v4-flash-latest',
       messages: [{ role: 'user', content: 'Hi' }],
     });
   });

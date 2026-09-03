@@ -27,7 +27,7 @@ Fill in `.env` with the API key (and optional `*_BASE_URL`) for the provider you
 - `anthropic/claude-sonnet-4-6` — needs `ANTHROPIC_API_KEY`, optional `ANTHROPIC_BASE_URL`
 - `openai/gpt-5.6-luna` — needs `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`
 - `google/gemini-3.6-flash` — needs `GOOGLE_API_KEY`, optional `GOOGLE_BASE_URL` (`gemini/…` also routes to Gemini)
-- `~deepseek/deepseek-v4-flash-latest` — needs `DEEPSEEK_API_KEY` and `DEEPSEEK_BASE_URL` (`deepseek/…` also routes here; uses the OpenAI SDK). If both DeepSeek vars are unset, it reuses `OPENAI_API_KEY` / `OPENAI_BASE_URL` (production proxy hack).
+- `~deepseek/deepseek-v4-flash-latest` — needs `DEEPSEEK_API_KEY` and `DEEPSEEK_BASE_URL` (`deepseek/…` and `deepseek-ai/…` also route here; uses the OpenAI SDK). If both DeepSeek vars are unset, it reuses `OPENAI_API_KEY` / `OPENAI_BASE_URL` (production proxy hack).
 
 `session.config.json` is separate from `.env`. It is local (not checked in) and holds **session defaults**, not secrets:
 

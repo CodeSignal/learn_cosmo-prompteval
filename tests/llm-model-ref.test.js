@@ -40,7 +40,7 @@ describe('parseModelRef', () => {
     });
   });
 
-  it('routes deepseek/ and ~deepseek/ to the same OpenAI-compatible provider', () => {
+  it('routes DeepSeek prefixes to the same OpenAI-compatible provider', () => {
     expect(parseModelRef('deepseek/deepseek-v4-flash-latest')).toMatchObject({
       provider: 'deepseek',
       modelId: 'deepseek-v4-flash-latest',
@@ -51,6 +51,12 @@ describe('parseModelRef', () => {
       provider: 'deepseek',
       modelId: 'deepseek-v4-flash-latest',
       prefix: 'deepseek',
+      apiKeyName: 'DEEPSEEK_API_KEY',
+    });
+    expect(parseModelRef('deepseek-ai/deepseek-v4-flash-latest')).toMatchObject({
+      provider: 'deepseek',
+      modelId: 'deepseek-v4-flash-latest',
+      prefix: 'deepseek-ai',
       apiKeyName: 'DEEPSEEK_API_KEY',
     });
   });
