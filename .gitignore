@@ -8,4 +8,5 @@ chat-sessions.json
 chat-config.json
 session.config.json
 eval-session.json
+.codesignal/report.md
 .agent-build

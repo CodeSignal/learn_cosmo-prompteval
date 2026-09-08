@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import request from 'supertest';
+import path from 'path';
 
 // Mock external deps before importing server
 vi.mock('fs/promises', () => ({
@@ -7,6 +8,7 @@ vi.mock('fs/promises', () => ({
     readFile: vi.fn(),
     writeFile: vi.fn(),
     rename: vi.fn(),
+    mkdir: vi.fn(),
   },
 }));
 
@@ -130,6 +132,40 @@ describe('PUT /api/eval/session', () => {
     expect(written.model).toBe('openai/gpt-5.6-luna');
     expect(written.cases).toHaveLength(5);
   });
+
+  it('writes .codesignal/report.md when the session includes lastResult', async () => {
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) return '{}';
+      throw new Error('ENOENT');
+    });
+    fs.writeFile.mockResolvedValue(undefined);
+    fs.rename.mockResolvedValue(undefined);
+    fs.mkdir.mockResolvedValue(undefined);
+
+    const lastResult = {
+      conditions: { metricId: 'exact-match', runs: 1, caseCount: 1 },
+      cases: [],
+      prompts: [{ id: 'A', label: 'Prompt', aggregate: { mean: 1, min: 1, max: 1, count: 1 } }],
+      comparison: { outcome: 'unscored', winnerId: null, means: { A: 1 } },
+    };
+
+    const res = await request(app)
+      .put('/api/eval/session')
+      .send({
+        promptA: 'Capital of {{input}}',
+        cases: [{ input: 'France', expectedAnswer: 'Paris' }],
+        lastResult,
+      });
+
+    expect(res.status).toBe(200);
+    expect(fs.mkdir).toHaveBeenCalled();
+    const reportCall = fs.writeFile.mock.calls.find((c) => String(c[0]).endsWith(`${path.sep}.codesignal${path.sep}report.md`)
+      || String(c[0]).endsWith('/.codesignal/report.md')
+      || String(c[0]).endsWith('.codesignal/report.md'));
+    expect(reportCall).toBeTruthy();
+    expect(String(reportCall[1])).toContain('# Prompt Evaluation Report');
+    expect(String(reportCall[1])).toContain('Capital of {{input}}');
+  });
 });
 
 // ── GET /api/session-config ───────────────────────────────────
@@ -203,10 +239,35 @@ describe('GET /api/session-config', () => {
 describe('POST /api/eval/compare', () => {
   beforeEach(() => {
     runPromptComparison.mockReset();
+    fs.mkdir.mockResolvedValue(undefined);
+    fs.writeFile.mockResolvedValue(undefined);
     fs.readFile.mockImplementation(async (p) => {
       if (String(p).includes('session.config.json')) return '{}';
       throw new Error('ENOENT');
     });
+  });
+
+  it('writes .codesignal/report.md after a successful compare', async () => {
+    runPromptComparison.mockResolvedValue({
+      conditions: { metricId: 'exact-match', runs: 1, caseCount: 1 },
+      cases: [],
+      prompts: [
+        { id: 'A', label: 'Prompt', aggregate: { mean: 1, min: 1, max: 1, count: 1 } },
+      ],
+      comparison: { outcome: 'unscored', winnerId: null, means: { A: 1 } },
+    });
+
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({ promptA: 'Answer briefly.', input: 'France', runs: 1 });
+
+    expect(res.status).toBe(200);
+    expect(fs.mkdir).toHaveBeenCalled();
+    const reportCall = fs.writeFile.mock.calls.find((c) => String(c[0]).includes(`${path.sep}.codesignal${path.sep}report.md`)
+      || String(c[0]).includes('.codesignal/report.md'));
+    expect(reportCall).toBeTruthy();
+    expect(String(reportCall[1])).toContain('# Prompt Evaluation Report');
+    expect(String(reportCall[1])).toContain('Answer briefly.');
   });
 
   it('creates the LLM from the session.config.json model ref', async () => {

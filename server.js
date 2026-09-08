@@ -10,10 +10,16 @@ import { createLlmProvider, requiredApiKeyName } from './lib/llm/provider.js';
 import { DEFAULT_METRIC_ID, isValidMetricId } from './lib/metrics/index.js';
 import { assertAllowedModel, findAllowedModel, normalizeSessionConfig } from './lib/session-config.js';
 import { normalizeEvalSession } from './lib/eval-session.js';
+import {
+  buildEvalReportMarkdown,
+  defaultEvalReportPath,
+  writeEvalReportFile,
+} from './lib/eval-report.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_CONFIG_FILE = path.join(__dirname, 'session.config.json');
 const EVAL_SESSION_FILE = path.join(__dirname, 'eval-session.json');
+const EVAL_REPORT_FILE = defaultEvalReportPath(__dirname);
 const app = express();
 const PORT = Number.parseInt(process.env.PORT ?? '3000', 10) || 3000;
 
@@ -57,7 +63,7 @@ function getLlm(model, allowedModels) {
  * throws escape Express 4 async handlers as unhandled rejections.
  * @param {import('express').Response} res
  * @param {unknown} requestedModel
- * @returns {Promise<import('./lib/llm/types.js').LlmProvider | null>}
+ * @returns {Promise<{ llm: import('./lib/llm/types.js').LlmProvider, model: string } | null>}
  */
 async function resolveLlm(res, requestedModel) {
   try {
@@ -74,13 +80,32 @@ async function resolveLlm(res, requestedModel) {
       res.status(503).json({ error: `${requiredApiKeyName(model)} is not configured` });
       return null;
     }
-    return llm;
+    return { llm, model };
   } catch (err) {
     const message = err instanceof Error && err.message
       ? err.message
       : 'LLM provider is not configured';
     res.status(503).json({ error: message });
     return null;
+  }
+}
+
+/**
+ * Persist Cosmo-facing report after a successful eval (best-effort).
+ * @param {{
+ *   model?: string,
+ *   provider?: string,
+ *   promptA?: string,
+ *   promptB?: string,
+ *   result: object,
+ * }} payload
+ */
+async function persistEvalReport(payload) {
+  try {
+    const markdown = buildEvalReportMarkdown(payload);
+    await writeEvalReportFile(EVAL_REPORT_FILE, markdown);
+  } catch (err) {
+    console.error('[eval/report] Failed to write .codesignal/report.md:', err);
   }
 }
 
@@ -125,6 +150,14 @@ app.put('/api/eval/session', async (req, res) => {
     await enqueueSessionsWrite(async () => {
       await writeJsonFileAtomic(EVAL_SESSION_FILE, session);
     }, evalSessionWrite);
+    if (session.lastResult && typeof session.lastResult === 'object') {
+      await persistEvalReport({
+        model: session.model,
+        promptA: session.promptA,
+        promptB: session.compareMode ? session.promptB : undefined,
+        result: session.lastResult,
+      });
+    }
     res.json({ session });
   } catch (err) {
     console.error('[eval/session] Error:', err);
@@ -136,8 +169,9 @@ app.put('/api/eval/session', async (req, res) => {
 // Evaluate Prompt A across cases; optionally compare with Prompt B under
 // identical conditions. Each run is an independent LLM complete() call.
 app.post('/api/eval/compare', async (req, res) => {
-  const llm = await resolveLlm(res, req.body?.model);
-  if (!llm) return;
+  const resolved = await resolveLlm(res, req.body?.model);
+  if (!resolved) return;
+  const { llm, model } = resolved;
 
   const {
     promptA,
@@ -206,6 +240,13 @@ app.post('/api/eval/compare', async (req, res) => {
         runs,
       },
     );
+    await persistEvalReport({
+      model,
+      provider: llm.name,
+      promptA,
+      promptB: typeof promptB === 'string' && promptB.trim() !== '' ? promptB : undefined,
+      result,
+    });
     res.json(result);
   } catch (err) {
     if (

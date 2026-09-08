@@ -41,6 +41,8 @@ Without `session.config.json`, prompts and cases start empty and the UI uses the
 
 Work-in-progress (prompts, cases, settings, and the last results) is stored in `eval-session.json`. That file is local and not checked in. A saved session wins over `initialSession` on reload.
 
+After each evaluation run, the server also writes `.codesignal/report.md` (markdown summary of setup, overall scores, and case details) for Cosmo / assessment. That file is gitignored.
+
 ## Run
 
 ```bash
