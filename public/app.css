@@ -5,9 +5,16 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* Design-system .button / .eval-field set display:flex|inline-flex, which
+   otherwise wins over the UA [hidden] { display: none } rule. */
+[hidden] {
+  display: none !important;
+}
+
 html, body {
   margin: 0;
   min-height: 100%;
+  height: 100%;
   font-family: var(--body-family, "Work Sans", ui-sans-serif, system-ui, sans-serif);
   color: var(--Colors-Text-Body-Default);
   background: var(--Colors-Backgrounds-Main-Default);
@@ -35,6 +42,8 @@ code {
   margin: 0 auto;
   padding: var(--UI-Spacing-spacing-xl, 32px) var(--UI-Spacing-spacing-l, 24px)
     var(--UI-Spacing-spacing-2xl, 48px);
+  min-width: 0;
+  width: 100%;
 }
 
 .eval-header {
@@ -106,12 +115,31 @@ code {
   gap: var(--UI-Spacing-spacing-l, 24px);
 }
 
+/* Beat design-system .box (center / large padding) so panel children stack cleanly. */
+.eval-panel.box {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: var(--UI-Spacing-spacing-m, 16px);
+  padding: var(--UI-Spacing-spacing-l, 28px);
+  min-width: 0;
+  width: 100%;
+}
+
 .eval-panel {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: var(--UI-Spacing-spacing-m, 16px);
   justify-content: flex-start;
+}
+
+.eval-panel textarea.input {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  min-height: 6.5rem;
 }
 
 .eval-panel > h2,
@@ -634,4 +662,133 @@ select.input {
   word-break: break-word;
   font-family: inherit;
   color: var(--Colors-Text-Body-Default);
+}
+
+/* ============================================================
+   Narrow viewports (split-screen /sim/ iframe)
+   Full-screen layout above these breakpoints stays unchanged.
+   ============================================================ */
+
+@media (max-width: 720px) {
+  .eval-app {
+    padding: var(--UI-Spacing-spacing-m, 16px) var(--UI-Spacing-spacing-s, 8px)
+      var(--UI-Spacing-spacing-l, 28px);
+  }
+
+  .eval-header {
+    margin-bottom: var(--UI-Spacing-spacing-m, 16px);
+  }
+
+  .eval-brand {
+    gap: var(--UI-Spacing-spacing-s, 8px);
+    margin-bottom: var(--UI-Spacing-spacing-s, 8px);
+  }
+
+  .cosmo-avatar.large {
+    width: 32px;
+    height: 32px;
+  }
+
+  .eval-header__lede {
+    max-width: none;
+  }
+
+  .eval-stack {
+    gap: var(--UI-Spacing-spacing-m, 16px);
+  }
+
+  .eval-panel.box {
+    padding: var(--UI-Spacing-spacing-m, 16px);
+    gap: var(--UI-Spacing-spacing-s, 12px);
+  }
+
+  .eval-controls-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--UI-Spacing-spacing-s, 12px);
+  }
+
+  .eval-field--metric,
+  .eval-field--model,
+  .eval-field--inline {
+    flex: none;
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+  }
+
+  .eval-runs-input {
+    max-width: none;
+    width: 100%;
+  }
+
+  .eval-compare-toggle {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .eval-compare-toggle .button {
+    width: 100%;
+    white-space: normal;
+    height: auto;
+    min-height: var(--Button-Height-Default, 40px);
+    padding-top: var(--UI-Spacing-spacing-s, 8px);
+    padding-bottom: var(--UI-Spacing-spacing-s, 8px);
+  }
+
+  .eval-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .eval-actions .button {
+    width: 100%;
+  }
+
+  .eval-details__summary {
+    flex-wrap: wrap;
+    padding: var(--UI-Spacing-spacing-s, 12px);
+    gap: var(--UI-Spacing-spacing-xs, 6px);
+  }
+
+  .eval-details__body {
+    padding: 0 var(--UI-Spacing-spacing-s, 12px) var(--UI-Spacing-spacing-s, 12px);
+    gap: var(--UI-Spacing-spacing-s, 12px);
+  }
+
+  .eval-panel textarea.input {
+    min-height: 5rem;
+  }
+
+  .eval-results-empty {
+    padding: var(--UI-Spacing-spacing-m, 16px) var(--UI-Spacing-spacing-s, 8px);
+  }
+
+  .eval-overall-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .eval-app {
+    padding: var(--UI-Spacing-spacing-s, 8px);
+  }
+
+  .eval-brand__text h1 {
+    font-size: 1.05rem;
+    line-height: 1.3;
+  }
+
+  .eval-header__eyebrow {
+    font-size: 0.7rem;
+  }
+
+  .cosmo-avatar.large {
+    width: 28px;
+    height: 28px;
+  }
+
+  .eval-panel.box {
+    padding: var(--UI-Spacing-spacing-s, 12px);
+  }
 }

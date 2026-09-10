@@ -8,7 +8,7 @@
     "build": "esbuild public/app.js --bundle --outfile=public/app.bundle.js --format=esm --platform=browser",
     "build:watch": "esbuild public/app.js --bundle --outfile=public/app.bundle.js --format=esm --platform=browser --watch",
     "start": "npm run build && node server.js",
-    "start:prod": "npm run build && node server.js",
+    "start:prod": "node server.js",
     "dev": "npm run build && concurrently -k -n client,server -c blue,green \"npm:build:watch\" \"node --watch server.js\"",
     "test": "vitest run",
     "test:watch": "vitest"
