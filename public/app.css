@@ -86,7 +86,7 @@ code {
   display: inline-block;
   flex-shrink: 0;
   vertical-align: middle;
-  background-image: url(/Images/cosmo-icon.png);
+  background-image: url(Images/cosmo-icon.png);
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;

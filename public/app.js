@@ -489,7 +489,7 @@ async function runEvaluation() {
 
   setBusy(true);
   try {
-    const res = await fetch('/api/eval/compare', {
+    const res = await fetch('api/eval/compare', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -599,7 +599,7 @@ async function persistSession() {
   const snapshot = JSON.parse(JSON.stringify(session));
   try {
     await enqueueSessionsWrite(async () => {
-      const res = await fetch('/api/eval/session', {
+      const res = await fetch('api/eval/session', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(snapshot),
@@ -629,7 +629,7 @@ function persistSessionNow() {
 
 async function loadSessionConfig() {
   try {
-    const res = await fetch('/api/session-config');
+    const res = await fetch('api/session-config');
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return normalizeSessionConfig({});
     return normalizeSessionConfig(data);
@@ -640,7 +640,7 @@ async function loadSessionConfig() {
 
 async function loadEvalSession() {
   try {
-    const res = await fetch('/api/eval/session');
+    const res = await fetch('api/eval/session');
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return null;
     return data.session ?? null;
