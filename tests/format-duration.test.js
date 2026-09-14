@@ -18,6 +18,7 @@ describe('formatDuration', () => {
     expect(formatDuration(4200)).toBe('4.2s');
     expect(formatDuration(10000)).toBe('10s');
     expect(formatDuration(12400)).toBe('12s');
+    expect(formatDuration(59999)).toBe('1m');
   });
 
   it('shows minutes for longer runs', () => {

@@ -226,6 +226,31 @@ describe('runPromptComparison', () => {
     expect(result.cases[0].prompts.map((p) => p.id)).toEqual(['A', 'B']);
   });
 
+  it('rejects an empty rendered prompt before any runBatch call', async () => {
+    const runBatch = vi.fn();
+    const complete = vi.fn();
+
+    await expect(
+      runPromptComparison(
+        { llm: { complete } },
+        {
+          prompts: [
+            { id: 'A', label: 'Prompt A', promptTemplate: 'Capital of {{input}}' },
+            { id: 'B', label: 'Prompt B', promptTemplate: '{{input}}' },
+          ],
+          cases: [
+            { input: 'France', expectedAnswer: 'Paris' },
+            { input: '   ', expectedAnswer: 'Madrid' },
+          ],
+          runBatch,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'EMPTY_PROMPT' });
+
+    expect(runBatch).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+  });
+
   it('rejects an empty prompts list', async () => {
     await expect(
       runPromptComparison(
