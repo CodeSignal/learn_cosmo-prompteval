@@ -4,6 +4,7 @@
  */
 
 import { isRenderableResult, normalizeEvalSession } from '../lib/eval-session.js';
+import { formatDuration } from '../lib/format-duration.js';
 import { collectPromptScoresByCase } from '../lib/score-distribution.js';
 import { enqueueSessionsWrite } from '../lib/sessions-file.js';
 import {
@@ -431,10 +432,14 @@ function renderComparison(data) {
   caseDetailsPanel.open = false;
 
   const multi = isMultiPrompt(data);
-  const { runs, caseCount } = data.conditions;
-  resultsMeta.textContent =
-    `${caseCount} case${caseCount === 1 ? '' : 's'} · ${runs} run${runs === 1 ? '' : 's'} each`
-    + (multi ? ' · A vs B' : '');
+  const { runs, caseCount, durationMs } = data.conditions;
+  const duration = formatDuration(durationMs);
+  resultsMeta.textContent = [
+    `${caseCount} case${caseCount === 1 ? '' : 's'}`,
+    `${runs} run${runs === 1 ? '' : 's'} each`,
+    duration,
+    multi ? 'A vs B' : '',
+  ].filter(Boolean).join(' · ');
 
   renderVerdict(data);
   renderOverallCards(data);
