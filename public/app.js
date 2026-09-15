@@ -474,12 +474,14 @@ function renderOverallCards(data) {
       return `
         <article class="eval-summary-card ${isWinner ? 'eval-summary-card--winner' : ''}">
           <p class="body-xsmall eval-summary-card__label">${escapeHtml(prompt.label)}</p>
-          <p class="heading-small eval-summary-card__mean">
-            ${prompt.aggregate ? mean : '—'}
-          </p>
-          <p class="body-xxsmall eval-summary-card__caption">
-            ${prompt.aggregate ? 'overall mean' : 'not scored'}
-            ${isWinner ? ' · higher' : ''}
+          <p class="eval-summary-card__score">
+            <span class="heading-small eval-summary-card__mean">
+              ${prompt.aggregate ? mean : '—'}
+            </span>
+            <span class="body-xxsmall eval-summary-card__caption">
+              ${prompt.aggregate ? 'overall mean' : 'not scored'}
+              ${isWinner ? ' · higher' : ''}
+            </span>
           </p>
           ${renderDistribution(groups)}
         </article>
