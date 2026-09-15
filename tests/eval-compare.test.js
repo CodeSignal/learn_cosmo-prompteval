@@ -114,7 +114,10 @@ describe('runPromptComparison', () => {
       metricId: 'exact-match',
       runs: 1,
       caseCount: 1,
+      maxConcurrency: 4,
+      durationMs: expect.any(Number),
     });
+    expect(result.conditions.durationMs).toBeGreaterThanOrEqual(0);
     expect(result.cases).toHaveLength(1);
     expect(result.comparison).toEqual({
       outcome: 'winner',
@@ -180,6 +183,72 @@ describe('runPromptComparison', () => {
     expect(result.prompts).toHaveLength(1);
     expect(result.prompts[0].aggregate.mean).toBe(1);
     expect(result.comparison.outcome).toBe('unscored');
+  });
+
+  it('shares maxConcurrency across prompt/case runs', async () => {
+    let started = 0;
+    let release = () => {};
+    const hang = new Promise((resolve) => {
+      release = resolve;
+    });
+    const complete = vi.fn().mockImplementation(async () => {
+      started += 1;
+      await hang;
+      return { text: 'Paris' };
+    });
+
+    const pending = runPromptComparison(
+      {
+        llm: { name: 'anthropic', model: 'claude-sonnet-4-6', complete },
+        systemPrompt: 'You are being evaluated.',
+      },
+      {
+        prompts: [
+          { id: 'A', label: 'Prompt A', promptTemplate: 'A {{input}}' },
+          { id: 'B', label: 'Prompt B', promptTemplate: 'B {{input}}' },
+        ],
+        cases: [
+          { input: 'France', expectedAnswer: 'Paris' },
+          { input: 'Spain', expectedAnswer: 'Madrid' },
+        ],
+        metricId: 'exact-match',
+        runs: 2,
+        maxConcurrency: 3,
+      },
+    );
+
+    await vi.waitFor(() => expect(started).toBe(3));
+    release();
+    const result = await pending;
+    expect(complete).toHaveBeenCalledTimes(8);
+    expect(result.conditions.maxConcurrency).toBe(3);
+    expect(result.cases).toHaveLength(2);
+    expect(result.cases[0].prompts.map((p) => p.id)).toEqual(['A', 'B']);
+  });
+
+  it('rejects an empty rendered prompt before any runBatch call', async () => {
+    const runBatch = vi.fn();
+    const complete = vi.fn();
+
+    await expect(
+      runPromptComparison(
+        { llm: { complete } },
+        {
+          prompts: [
+            { id: 'A', label: 'Prompt A', promptTemplate: 'Capital of {{input}}' },
+            { id: 'B', label: 'Prompt B', promptTemplate: '{{input}}' },
+          ],
+          cases: [
+            { input: 'France', expectedAnswer: 'Paris' },
+            { input: '   ', expectedAnswer: 'Madrid' },
+          ],
+          runBatch,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'EMPTY_PROMPT' });
+
+    expect(runBatch).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it('rejects an empty prompts list', async () => {

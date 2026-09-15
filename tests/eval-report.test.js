@@ -9,7 +9,7 @@ describe('buildEvalReportMarkdown', () => {
       promptA: 'Answer with only the capital.',
       generatedAt: '2026-09-08T12:00:00.000Z',
       result: {
-        conditions: { metricId: 'exact-match', runs: 2, caseCount: 1 },
+        conditions: { metricId: 'exact-match', runs: 2, caseCount: 1, durationMs: 4200 },
         comparison: { outcome: 'unscored', winnerId: null, means: { A: 1 } },
         prompts: [
           { id: 'A', label: 'Prompt', aggregate: { mean: 1, min: 1, max: 1, count: 2 } },
@@ -41,6 +41,8 @@ describe('buildEvalReportMarkdown', () => {
     expect(md).toContain('Single prompt');
     expect(md).toContain('anthropic/claude-haiku-4-5-20251001');
     expect(md).toContain('exact-match');
+    expect(md).toContain('| Runs each | 2 |');
+    expect(md).toContain('| Duration | 4.2s |');
     expect(md).toContain('France');
     expect(md).toContain('Paris');
     expect(md).toContain('| 1 | ok | 1.00 | Paris |');

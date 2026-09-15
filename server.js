@@ -120,8 +120,8 @@ app.use(express.json());
 app.use('/design-system', express.static(path.join(__dirname, 'design-system')));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Local eval session defaults (model, prompts, cases, UI min/max). Not secrets —
-// those stay in .env. Missing file → empty initial session + built-in limits.
+// Local eval session defaults (model, concurrency, prompts, cases, UI min/max).
+// Not secrets — those stay in .env. Missing file → empty initial session + built-in limits.
 app.get('/api/session-config', async (_req, res) => {
   const raw = await readJsonFile(SESSION_CONFIG_FILE, {});
   res.json(normalizeSessionConfig(raw));
@@ -238,6 +238,7 @@ app.post('/api/eval/compare', async (req, res) => {
         expectedAnswer: typeof expectedAnswer === 'string' ? expectedAnswer : '',
         metricId: typeof metricId === 'string' && metricId ? metricId : DEFAULT_METRIC_ID,
         runs,
+        maxConcurrency: normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {})).maxConcurrency,
       },
     );
     await persistEvalReport({

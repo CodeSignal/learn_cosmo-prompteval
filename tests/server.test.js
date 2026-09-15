@@ -185,6 +185,7 @@ describe('GET /api/session-config', () => {
       '~deepseek/deepseek-v4-flash-latest',
     ]);
     expect(res.body.allowUserModelSelection).toBe(false);
+    expect(res.body.maxConcurrency).toBe(4);
     expect(res.body.defaults).toEqual({
       minRuns: 1,
       maxRuns: 5,
@@ -208,6 +209,7 @@ describe('GET /api/session-config', () => {
             'google/gemini-3.6-flash',
           ],
           allowUserModelSelection: true,
+          maxConcurrency: 2,
           defaults: { minRuns: 2, maxRuns: 4 },
           initialSession: {
             promptA: 'Prompt A',
@@ -226,6 +228,7 @@ describe('GET /api/session-config', () => {
       'google/gemini-3.6-flash',
     ]);
     expect(res.body.allowUserModelSelection).toBe(true);
+    expect(res.body.maxConcurrency).toBe(2);
     expect(res.body.defaults.minRuns).toBe(2);
     expect(res.body.defaults.maxRuns).toBe(4);
     expect(res.body.initialSession.promptA).toBe('Prompt A');
@@ -559,6 +562,30 @@ describe('POST /api/eval/compare', () => {
     expect(opts.prompts.map((p) => p.id)).toEqual(['A', 'B']);
     expect(opts.cases).toHaveLength(2);
     expect(opts.runs).toBe(2);
+    expect(opts.maxConcurrency).toBe(4);
+  });
+
+  it('forwards maxConcurrency from session.config.json', async () => {
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({ maxConcurrency: 8 });
+      }
+      throw new Error('ENOENT');
+    });
+    runPromptComparison.mockResolvedValue({
+      conditions: { metricId: 'exact-match', runs: 1, caseCount: 1, maxConcurrency: 8 },
+      cases: [],
+      prompts: [],
+      comparison: { outcome: 'unscored', winnerId: null, means: {} },
+    });
+
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({ promptA: 'Hi', input: 'x', runs: 1 });
+
+    expect(res.status).toBe(200);
+    const [, opts] = runPromptComparison.mock.calls[0];
+    expect(opts.maxConcurrency).toBe(8);
   });
 
   it('accepts a single prompt when promptB is omitted', async () => {

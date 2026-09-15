@@ -52,7 +52,7 @@ describe('runSingleEval / runEvalBatch', () => {
     expect(result.sessionId.length).toBeGreaterThan(0);
   });
 
-  it('runs N independent completions sequentially', async () => {
+  it('runs N independent completions', async () => {
     const { deps, complete } = makeDeps();
     const batch = await runEvalBatch(deps, {
       promptTemplate: 'Echo: {{input}}',
@@ -67,6 +67,37 @@ describe('runSingleEval / runEvalBatch', () => {
     expect(batch.metricId).toBeNull();
     expect(complete).toHaveBeenCalledTimes(3);
     expect(new Set(batch.results.map((r) => r.sessionId)).size).toBe(3);
+    expect(batch.results.map((r) => r.run)).toEqual([1, 2, 3]);
+  });
+
+  it('caps in-flight complete() calls at maxConcurrency', async () => {
+    let started = 0;
+    let release = () => {};
+    const hang = new Promise((resolve) => {
+      release = resolve;
+    });
+    const complete = vi.fn().mockImplementation(async () => {
+      started += 1;
+      await hang;
+      return { text: 'ok' };
+    });
+    const deps = {
+      llm: { name: 'anthropic', model: 'claude-sonnet-4-6', complete },
+      systemPrompt: 'You are being evaluated.',
+    };
+
+    const pending = runEvalBatch(deps, {
+      promptTemplate: 'Echo: {{input}}',
+      input: 'ping',
+      runs: 3,
+      maxConcurrency: 2,
+    });
+
+    await vi.waitFor(() => expect(started).toBe(2));
+    release();
+    const batch = await pending;
+    expect(complete).toHaveBeenCalledTimes(3);
+    expect(batch.results.map((r) => r.run)).toEqual([1, 2, 3]);
   });
 
   it('scores outputs when expectedAnswer is provided', async () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { DEFAULT_CONCURRENCY } from '../lib/concurrency.js';
 import {
   DEFAULT_ALLOWED_MODELS,
   DEFAULT_MODEL_REF,
@@ -14,6 +15,7 @@ describe('normalizeSessionConfig', () => {
       model: DEFAULT_MODEL_REF,
       allowedModels: [...DEFAULT_ALLOWED_MODELS],
       allowUserModelSelection: false,
+      maxConcurrency: DEFAULT_CONCURRENCY,
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
     });
@@ -21,6 +23,7 @@ describe('normalizeSessionConfig', () => {
       model: DEFAULT_MODEL_REF,
       allowedModels: [...DEFAULT_ALLOWED_MODELS],
       allowUserModelSelection: false,
+      maxConcurrency: DEFAULT_CONCURRENCY,
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
     });
@@ -69,6 +72,13 @@ describe('normalizeSessionConfig', () => {
       minCases: 1,
       maxCases: 2,
     });
+  });
+
+  it('normalizes maxConcurrency and defaults when omitted', () => {
+    expect(normalizeSessionConfig({ maxConcurrency: 2 }).maxConcurrency).toBe(2);
+    expect(normalizeSessionConfig({ maxConcurrency: 0 }).maxConcurrency).toBe(1);
+    expect(normalizeSessionConfig({ maxConcurrency: 99 }).maxConcurrency).toBe(50);
+    expect(normalizeSessionConfig({}).maxConcurrency).toBe(DEFAULT_CONCURRENCY);
   });
 
   it('clamps bounds to the fallback range and ignores inverted pairs', () => {
