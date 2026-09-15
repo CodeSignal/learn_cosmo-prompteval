@@ -15,6 +15,7 @@ describe('normalizeSessionConfig', () => {
       model: DEFAULT_MODEL_REF,
       allowedModels: [...DEFAULT_ALLOWED_MODELS],
       allowUserModelSelection: false,
+      allowCompare: false,
       maxConcurrency: DEFAULT_CONCURRENCY,
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
@@ -23,6 +24,7 @@ describe('normalizeSessionConfig', () => {
       model: DEFAULT_MODEL_REF,
       allowedModels: [...DEFAULT_ALLOWED_MODELS],
       allowUserModelSelection: false,
+      allowCompare: false,
       maxConcurrency: DEFAULT_CONCURRENCY,
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
@@ -44,6 +46,12 @@ describe('normalizeSessionConfig', () => {
       .toBe(false);
     expect(normalizeSessionConfig({ allowUserModelSelection: 'true' }).allowUserModelSelection)
       .toBe(false);
+  });
+
+  it('only enables compare UI for an explicit true value', () => {
+    expect(normalizeSessionConfig({ allowCompare: true }).allowCompare).toBe(true);
+    expect(normalizeSessionConfig({ allowCompare: false }).allowCompare).toBe(false);
+    expect(normalizeSessionConfig({ allowCompare: 'true' }).allowCompare).toBe(false);
   });
 
   it('defaults model to the first allowed entry when the default is not listed', () => {

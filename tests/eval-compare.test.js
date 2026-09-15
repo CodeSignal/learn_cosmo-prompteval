@@ -226,6 +226,36 @@ describe('runPromptComparison', () => {
     expect(result.cases[0].prompts.map((p) => p.id)).toEqual(['A', 'B']);
   });
 
+  it('emits progress events as runs start and finish', async () => {
+    const complete = vi.fn().mockResolvedValue({ text: 'Paris' });
+    /** @type {Array<object>} */
+    const events = [];
+
+    await runPromptComparison(
+      {
+        llm: { name: 'anthropic', model: 'claude-sonnet-4-6', complete },
+        systemPrompt: 'You are being evaluated.',
+      },
+      {
+        prompts: [{ id: 'A', label: 'Prompt', promptTemplate: 'Capital of {{input}}' }],
+        cases: [
+          { id: 'c1', label: 'Case 1', input: 'France', expectedAnswer: 'Paris' },
+          { id: 'c2', label: 'Case 2', input: 'Japan', expectedAnswer: 'Tokyo' },
+        ],
+        metricId: 'exact-match',
+        runs: 2,
+        maxConcurrency: 2,
+        onProgress: (event) => events.push(event),
+      },
+    );
+
+    expect(events[0]).toMatchObject({ phase: 'start', completed: 0, total: 4 });
+    expect(events.some((e) => e.phase === 'run_start')).toBe(true);
+    expect(events.filter((e) => e.phase === 'run_done')).toHaveLength(4);
+    expect(events.at(-1)).toMatchObject({ phase: 'done', completed: 4, total: 4, active: 0 });
+    expect(events.filter((e) => e.phase === 'run_done').map((e) => e.completed)).toEqual([1, 2, 3, 4]);
+  });
+
   it('rejects an empty rendered prompt before any runBatch call', async () => {
     const runBatch = vi.fn();
     const complete = vi.fn();

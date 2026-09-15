@@ -34,6 +34,7 @@ Fill in `.env` with the API key (and optional `*_BASE_URL`) for the provider you
 - `model` (optional) — `provider/model-id` (default `anthropic/claude-sonnet-4-6`); must be listed in `allowedModels`
 - `allowedModels` (optional) — picker list of `provider/model-id` refs (defaults to Anthropic, OpenAI, Gemini, and DeepSeek examples above)
 - `allowUserModelSelection` (optional) — when `true`, show a model picker and let the saved eval session override `model` with an entry from `allowedModels` (default `false`)
+- `allowCompare` (optional) — when `true`, show “Compare with another prompt” so learners can A/B two prompts (default `false`)
 - `maxConcurrency` (optional) — max in-flight LLM calls during an evaluation (default `4`, range 1–50). Set to `1` for serial.
 - `defaults` (optional) — `minRuns`, `maxRuns`, `minCases`, `maxCases` (each 1–5)
 - `initialSession` (optional) — `promptA`, `promptB`, and `cases` (`input` / `expectedAnswer`)

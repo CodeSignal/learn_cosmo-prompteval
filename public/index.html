@@ -65,7 +65,7 @@
           </div>
         </div>
 
-        <div class="eval-compare-toggle" id="compareToggleRow">
+        <div class="eval-compare-toggle" id="compareToggleRow" hidden>
           <button type="button" class="button button-secondary" id="enableCompareBtn">
             Compare with another prompt
           </button>
@@ -121,7 +121,20 @@
 
         <div class="eval-actions">
           <button type="button" class="button button-primary" id="runBtn">Run evaluation</button>
-          <p class="body-xxsmall eval-status" id="statusText" role="status" aria-live="polite"></p>
+          <div class="eval-progress" id="progressWrap" hidden>
+            <p class="body-xxsmall eval-status" id="statusText" role="status" aria-live="polite"></p>
+            <div
+              class="eval-progress__track"
+              role="progressbar"
+              id="progressBar"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+              aria-label="Evaluation progress"
+            >
+              <div class="eval-progress__fill" id="progressFill"></div>
+            </div>
+          </div>
         </div>
 
         <p class="body-xxsmall eval-error" id="errorText" role="alert" hidden></p>
@@ -148,7 +161,7 @@
           <details class="eval-details" id="caseDetailsPanel">
             <summary class="eval-details__summary">
               <span class="body-xsmall eval-details__summary-title">Case details</span>
-              <span class="body-xxsmall eval-details__summary-meta">Optional — open to inspect consistency</span>
+              <span class="body-xxsmall eval-details__summary-meta">Open to inspect consistency across runs</span>
             </summary>
             <div class="eval-details__body">
               <div class="eval-case-results" id="caseResults"></div>

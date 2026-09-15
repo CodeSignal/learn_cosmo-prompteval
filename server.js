@@ -15,6 +15,7 @@ import {
   defaultEvalReportPath,
   writeEvalReportFile,
 } from './lib/eval-report.js';
+import { formatEvalProgress } from './lib/eval-progress.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_CONFIG_FILE = path.join(__dirname, 'session.config.json');
@@ -220,6 +221,22 @@ app.post('/api/eval/compare', async (req, res) => {
   }
 
   try {
+    const wantsStream = req.headers.accept?.includes('text/event-stream')
+      || req.body?.stream === true;
+
+    /** @type {((event: string, data: object) => void) | null} */
+    let sendEvent = null;
+    if (wantsStream) {
+      res.status(200);
+      res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders?.();
+      sendEvent = (event, data) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+    }
+
     const result = await runPromptComparison(
       { llm },
       {
@@ -239,6 +256,14 @@ app.post('/api/eval/compare', async (req, res) => {
         metricId: typeof metricId === 'string' && metricId ? metricId : DEFAULT_METRIC_ID,
         runs,
         maxConcurrency: normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {})).maxConcurrency,
+        onProgress: sendEvent
+          ? (progress) => {
+            sendEvent('progress', {
+              ...progress,
+              message: formatEvalProgress(progress),
+            });
+          }
+          : undefined,
       },
     );
     await persistEvalReport({
@@ -248,6 +273,11 @@ app.post('/api/eval/compare', async (req, res) => {
       promptB: typeof promptB === 'string' && promptB.trim() !== '' ? promptB : undefined,
       result,
     });
+    if (sendEvent) {
+      sendEvent('result', result);
+      res.end();
+      return;
+    }
     res.json(result);
   } catch (err) {
     if (
@@ -257,10 +287,18 @@ app.post('/api/eval/compare', async (req, res) => {
       || err?.code === 'INVALID_CASE'
       || err?.code === 'TOO_MANY_CASES'
     ) {
-      return res.status(400).json({ error: err.message });
+      if (!res.headersSent) {
+        return res.status(400).json({ error: err.message });
+      }
+      res.write(`event: error\ndata: ${JSON.stringify({ error: err.message })}\n\n`);
+      return res.end();
     }
     console.error('[eval/compare] Error:', err);
-    res.status(500).json({ error: 'Failed to compare prompts' });
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'Failed to compare prompts' });
+    }
+    res.write(`event: error\ndata: ${JSON.stringify({ error: 'Failed to compare prompts' })}\n\n`);
+    res.end();
   }
 });
 

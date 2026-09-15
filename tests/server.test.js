@@ -185,6 +185,7 @@ describe('GET /api/session-config', () => {
       '~deepseek/deepseek-v4-flash-latest',
     ]);
     expect(res.body.allowUserModelSelection).toBe(false);
+    expect(res.body.allowCompare).toBe(false);
     expect(res.body.maxConcurrency).toBe(4);
     expect(res.body.defaults).toEqual({
       minRuns: 1,
@@ -209,6 +210,7 @@ describe('GET /api/session-config', () => {
             'google/gemini-3.6-flash',
           ],
           allowUserModelSelection: true,
+          allowCompare: true,
           maxConcurrency: 2,
           defaults: { minRuns: 2, maxRuns: 4 },
           initialSession: {
@@ -228,6 +230,7 @@ describe('GET /api/session-config', () => {
       'google/gemini-3.6-flash',
     ]);
     expect(res.body.allowUserModelSelection).toBe(true);
+    expect(res.body.allowCompare).toBe(true);
     expect(res.body.maxConcurrency).toBe(2);
     expect(res.body.defaults.minRuns).toBe(2);
     expect(res.body.defaults.maxRuns).toBe(4);
@@ -271,6 +274,56 @@ describe('POST /api/eval/compare', () => {
     expect(reportCall).toBeTruthy();
     expect(String(reportCall[1])).toContain('# Prompt Evaluation Report');
     expect(String(reportCall[1])).toContain('Answer briefly.');
+  });
+
+  it('streams progress events when Accept is text/event-stream', async () => {
+    runPromptComparison.mockImplementation(async (_deps, opts) => {
+      opts.onProgress?.({
+        phase: 'start',
+        completed: 0,
+        total: 2,
+        active: 0,
+        compareMode: false,
+      });
+      opts.onProgress?.({
+        phase: 'run_done',
+        completed: 1,
+        total: 2,
+        active: 0,
+        caseLabel: 'Case 1',
+        promptLabel: 'Prompt',
+        run: 1,
+        compareMode: false,
+      });
+      opts.onProgress?.({
+        phase: 'done',
+        completed: 2,
+        total: 2,
+        active: 0,
+        compareMode: false,
+      });
+      return {
+        conditions: { metricId: 'exact-match', runs: 2, caseCount: 1 },
+        cases: [],
+        prompts: [
+          { id: 'A', label: 'Prompt', aggregate: { mean: 1, min: 1, max: 1, count: 2 } },
+        ],
+        comparison: { outcome: 'unscored', winnerId: null, means: { A: 1 } },
+      };
+    });
+
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .set('Accept', 'text/event-stream')
+      .send({ promptA: 'Answer briefly.', input: 'France', runs: 2, stream: true });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/text\/event-stream/);
+    expect(res.text).toContain('event: progress');
+    expect(res.text).toContain('"completed":1');
+    expect(res.text).toContain('1/2 complete');
+    expect(res.text).toContain('event: result');
+    expect(res.text).toContain('"caseCount":1');
   });
 
   it('creates the LLM from the session.config.json model ref', async () => {

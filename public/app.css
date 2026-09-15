@@ -233,6 +233,40 @@ select.input {
   color: var(--Colors-Text-Body-Light);
 }
 
+.eval-status--done {
+  color: var(--Colors-Base-Accent-Green-700, #147a4c);
+  font-weight: 600;
+}
+
+.eval-progress {
+  flex: 1;
+  min-width: 12rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.eval-progress__track {
+  width: 100%;
+  max-width: 22rem;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--Colors-Base-Neutral-200, #e4e7ec);
+  overflow: hidden;
+}
+
+.eval-progress__fill {
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: var(--Colors-Base-Accent-Blue-600, #1f6feb);
+  transition: width 160ms ease-out, background-color 160ms ease-out;
+}
+
+.eval-progress--done .eval-progress__fill {
+  background: var(--Colors-Base-Accent-Green-600, #198e59);
+}
+
 .eval-error {
   margin: 0;
   color: var(--Colors-Base-Accent-Red-700, #b8062c);
@@ -417,7 +451,7 @@ select.input {
 }
 
 @media (min-width: 600px) {
-  .eval-overall-grid {
+  .eval-overall-grid:has(> :nth-child(2)) {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
@@ -431,6 +465,42 @@ select.input {
   border-radius: var(--UI-Radius-radius-s);
   background: var(--Colors-Backgrounds-Main-Top, var(--Colors-Base-Neutral-00));
   text-align: center;
+}
+
+@media (min-width: 600px) {
+  .eval-summary-card:only-child {
+    display: grid;
+    grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    column-gap: var(--UI-Spacing-spacing-l, 24px);
+    align-items: start;
+    text-align: left;
+  }
+
+  .eval-summary-card:only-child .eval-summary-card__label,
+  .eval-summary-card:only-child .eval-summary-card__mean,
+  .eval-summary-card:only-child .eval-summary-card__caption {
+    grid-column: 1;
+  }
+
+  .eval-summary-card:only-child .eval-dist {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    padding-left: var(--UI-Spacing-spacing-l, 24px);
+    border-left: 1px solid var(--Colors-Stroke-Light, var(--Colors-Stroke-Default));
+    align-self: stretch;
+  }
+
+  .eval-summary-card:only-child .eval-dist__bar {
+    max-width: 40px;
+  }
+
+  .eval-summary-card:only-child .eval-dist__bars {
+    gap: 8px;
+  }
 }
 
 .eval-summary-card--winner {
@@ -548,7 +618,7 @@ select.input {
 }
 
 @media (min-width: 800px) {
-  .eval-compare-grid {
+  .eval-compare-grid:has(> :nth-child(2)) {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }

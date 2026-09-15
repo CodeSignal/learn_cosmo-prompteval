@@ -21,6 +21,7 @@ const promptALabel = document.getElementById('promptALabel');
 const setupHeading = document.getElementById('setupHeading');
 const headerLede = document.getElementById('headerLede');
 const resultsEmptyCopy = document.getElementById('resultsEmptyCopy');
+const compareToggleRow = document.getElementById('compareToggleRow');
 const enableCompareBtn = document.getElementById('enableCompareBtn');
 const disableCompareBtn = document.getElementById('disableCompareBtn');
 const casesListEl = document.getElementById('casesList');
@@ -33,6 +34,9 @@ const runCountEl = document.getElementById('runCount');
 const runCountLabel = document.getElementById('runCountLabel');
 const runBtn = document.getElementById('runBtn');
 const statusText = document.getElementById('statusText');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar = document.getElementById('progressBar');
+const progressFill = document.getElementById('progressFill');
 const errorText = document.getElementById('errorText');
 const resultsEmpty = document.getElementById('resultsEmpty');
 const resultsMeta = document.getElementById('resultsMeta');
@@ -47,6 +51,7 @@ let MAX_RUNS = FALLBACK_DEFAULTS.maxRuns;
 let MIN_CASES = FALLBACK_DEFAULTS.minCases;
 let MAX_CASES = FALLBACK_DEFAULTS.maxCases;
 let ALLOW_USER_MODEL_SELECTION = false;
+let ALLOW_COMPARE = false;
 let CONFIG_MODEL = '';
 let ALLOWED_MODELS = [];
 
@@ -78,9 +83,13 @@ function updateCasesSummary() {
 }
 
 function syncCompareModeUi() {
+  if (!ALLOW_COMPARE) {
+    session.compareMode = false;
+  }
+  compareToggleRow.hidden = !ALLOW_COMPARE;
   promptBWrap.hidden = !session.compareMode;
-  enableCompareBtn.hidden = session.compareMode;
-  disableCompareBtn.hidden = !session.compareMode;
+  enableCompareBtn.hidden = !ALLOW_COMPARE || session.compareMode;
+  disableCompareBtn.hidden = !ALLOW_COMPARE || !session.compareMode;
   promptGrid.classList.toggle('eval-prompt-grid--single', !session.compareMode);
   promptGrid.classList.toggle('eval-prompt-grid--compare', session.compareMode);
 
@@ -114,11 +123,126 @@ function setBusy(busy) {
         || (el.classList.contains('eval-case__remove') && session.cases.length <= MIN_CASES);
     }
   });
-  statusText.textContent = busy
-    ? (session.compareMode
-      ? 'Comparing prompts — each run is independent…'
-      : 'Running evaluation — each run is independent…')
-    : '';
+  if (busy) {
+    setProgress({
+      message: session.compareMode
+        ? 'Comparing prompts…'
+        : 'Running evaluation…',
+      completed: 0,
+      total: 0,
+    });
+  } else if (!statusText.textContent) {
+    clearProgress();
+  }
+}
+
+/**
+ * @param {{ message?: string, completed?: number, total?: number }} progress
+ */
+function setProgress(progress) {
+  if (progressWrap) progressWrap.hidden = false;
+  if (typeof progress.message === 'string') {
+    statusText.textContent = progress.message;
+  }
+  const done = statusText.textContent === 'Done.';
+  statusText.classList.toggle('eval-status--done', done);
+  if (progressWrap) progressWrap.classList.toggle('eval-progress--done', done);
+  const total = Number(progress.total);
+  const completed = Number(progress.completed);
+  const percent = Number.isFinite(total) && total > 0 && Number.isFinite(completed)
+    ? Math.min(100, Math.round((completed / total) * 100))
+    : 0;
+  if (progressFill) progressFill.style.width = `${percent}%`;
+  if (progressBar) progressBar.setAttribute('aria-valuenow', String(percent));
+}
+
+function clearProgress() {
+  if (progressWrap) {
+    progressWrap.hidden = true;
+    progressWrap.classList.remove('eval-progress--done');
+  }
+  statusText.textContent = '';
+  statusText.classList.remove('eval-status--done');
+  if (progressFill) progressFill.style.width = '0%';
+  if (progressBar) progressBar.setAttribute('aria-valuenow', '0');
+}
+
+/**
+ * POST /api/eval/compare with SSE progress events (JSON fallback).
+ * @param {object} body
+ * @returns {Promise<object>}
+ */
+async function fetchEvalComparison(body) {
+  const res = await fetch('api/eval/compare', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({ ...body, stream: true }),
+  });
+
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('text/event-stream')) {
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || `Request failed (${res.status})`);
+    }
+    return data;
+  }
+
+  if (!res.ok || !res.body) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  /** @type {object | null} */
+  let finalResult = null;
+  /** @type {string | null} */
+  let streamError = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let sep;
+    while ((sep = buffer.indexOf('\n\n')) >= 0) {
+      const rawEvent = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      let eventName = 'message';
+      const dataLines = [];
+      for (const line of rawEvent.split('\n')) {
+        if (line.startsWith('event:')) eventName = line.slice(6).trim();
+        else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+      }
+      if (dataLines.length === 0) continue;
+      let payload;
+      try {
+        payload = JSON.parse(dataLines.join('\n'));
+      } catch {
+        continue;
+      }
+      if (eventName === 'progress') {
+        setProgress({
+          message: payload.message,
+          completed: payload.completed,
+          total: payload.total,
+        });
+      } else if (eventName === 'result') {
+        finalResult = payload;
+      } else if (eventName === 'error') {
+        streamError = payload.error || 'Failed to compare prompts';
+      }
+    }
+  }
+
+  if (streamError) throw new Error(streamError);
+  if (!finalResult) throw new Error('Evaluation ended without a result');
+  return finalResult;
 }
 
 function showError(message) {
@@ -494,23 +618,19 @@ async function runEvaluation() {
 
   setBusy(true);
   try {
-    const res = await fetch('api/eval/compare', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(data.error || `Request failed (${res.status})`);
-    }
+    const data = await fetchEvalComparison(body);
     session.lastResult = data;
     renderComparison(data);
     persistSessionNow();
-    statusText.textContent = 'Done.';
+    setProgress({
+      message: 'Done.',
+      completed: 1,
+      total: 1,
+    });
   } catch (err) {
     console.error('[eval] Run failed:', err);
     showError(err?.message || (compareMode ? 'Failed to compare prompts' : 'Failed to run evaluation'));
-    statusText.textContent = '';
+    clearProgress();
   } finally {
     setBusy(false);
   }
@@ -531,6 +651,7 @@ function applyDefaults(defaults) {
 
 function configureModelSelection(config) {
   ALLOW_USER_MODEL_SELECTION = config.allowUserModelSelection;
+  ALLOW_COMPARE = config.allowCompare === true;
   CONFIG_MODEL = config.model;
   ALLOWED_MODELS = config.allowedModels;
 
@@ -582,11 +703,12 @@ function applySessionToDom() {
 }
 
 function applyInitialSession(initial) {
+  const startInCompare = ALLOW_COMPARE && initial.promptB.trim() !== '';
   session = normalizeEvalSession({
     model: resolveSessionModel(''),
     promptA: initial.promptA,
     promptB: initial.promptB,
-    compareMode: initial.promptB.trim() !== '',
+    compareMode: startInCompare,
     cases: (initial.cases ?? []).map((c) => ({
       id: newCaseId(),
       input: c.input,
@@ -663,6 +785,7 @@ async function init() {
   configureModelSelection(config);
   if (saved) {
     session = normalizeEvalSession(saved, sessionLimits());
+    if (!ALLOW_COMPARE) session.compareMode = false;
     applySessionToDom();
     if (isRenderableResult(session.lastResult)) {
       renderComparison(session.lastResult);
@@ -675,6 +798,7 @@ async function init() {
 }
 
 enableCompareBtn.addEventListener('click', () => {
+  if (!ALLOW_COMPARE) return;
   session.compareMode = true;
   syncCompareModeUi();
   persistSessionNow();

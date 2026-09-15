@@ -7,6 +7,7 @@
     "~deepseek/deepseek-v4-flash-latest"
   ],
   "allowUserModelSelection": true,
+  "allowCompare": false,
   "maxConcurrency": 4,
   "defaults": {
     "minRuns": 1,
