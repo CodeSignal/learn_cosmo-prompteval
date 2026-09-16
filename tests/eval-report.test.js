@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { buildEvalReportMarkdown } from '../lib/eval-report.js';
+import {
+  buildEvalReportHistoryMarkdown,
+  buildEvalReportMarkdown,
+} from '../lib/eval-report.js';
 
 describe('buildEvalReportMarkdown', () => {
   it('renders a single-prompt scored report', () => {
@@ -69,5 +72,29 @@ describe('buildEvalReportMarkdown', () => {
     expect(md).toContain('Prompt A vs Prompt B');
     expect(md).toContain('**Winner:** Prompt A');
     expect(md).toContain('### Prompt B');
+  });
+
+  it('keeps each completed evaluation in numbered history sections', () => {
+    const first = '# Prompt Evaluation Report\n\nGenerated: first\n\n## Setup\n\nFirst setup\n';
+    const second = '# Prompt Evaluation Report\n\nGenerated: second\n\n## Setup\n\nSecond setup\n';
+
+    const history = buildEvalReportHistoryMarkdown('', first);
+    const updated = buildEvalReportHistoryMarkdown(history, second);
+
+    expect(updated).toContain('## Evaluation 1\n\nGenerated: first');
+    expect(updated).toContain('## Evaluation 2\n\nGenerated: second');
+    expect(updated).toContain('### Setup\n\nFirst setup');
+    expect(updated).toContain('### Setup\n\nSecond setup');
+    expect(updated.match(/^# Prompt Evaluation Report$/gmu)).toHaveLength(1);
+  });
+
+  it('migrates a legacy single-evaluation report before appending', () => {
+    const legacy = '# Prompt Evaluation Report\n\nGenerated: old\n\n## Setup\n\nOld setup\n';
+    const next = '# Prompt Evaluation Report\n\nGenerated: new\n\n## Setup\n\nNew setup\n';
+
+    const history = buildEvalReportHistoryMarkdown(legacy, next);
+
+    expect(history).toContain('## Evaluation 1\n\nGenerated: old');
+    expect(history).toContain('## Evaluation 2\n\nGenerated: new');
   });
 });

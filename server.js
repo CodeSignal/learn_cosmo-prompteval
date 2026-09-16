@@ -11,9 +11,9 @@ import { DEFAULT_METRIC_ID, isValidMetricId } from './lib/metrics/index.js';
 import { assertAllowedModel, findAllowedModel, normalizeSessionConfig } from './lib/session-config.js';
 import { normalizeEvalSession } from './lib/eval-session.js';
 import {
+  appendEvalReportFile,
   buildEvalReportMarkdown,
   defaultEvalReportPath,
-  writeEvalReportFile,
 } from './lib/eval-report.js';
 import { formatEvalProgress } from './lib/eval-progress.js';
 
@@ -21,6 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_CONFIG_FILE = path.join(__dirname, 'session.config.json');
 const EVAL_SESSION_FILE = path.join(__dirname, 'eval-session.json');
 const EVAL_REPORT_FILE = defaultEvalReportPath(__dirname);
+const evalReportWrite = { chain: Promise.resolve() };
 const app = express();
 const PORT = Number.parseInt(process.env.PORT ?? '3000', 10) || 3000;
 
@@ -104,7 +105,10 @@ async function resolveLlm(res, requestedModel) {
 async function persistEvalReport(payload) {
   try {
     const markdown = buildEvalReportMarkdown(payload);
-    await writeEvalReportFile(EVAL_REPORT_FILE, markdown);
+    await enqueueSessionsWrite(
+      () => appendEvalReportFile(EVAL_REPORT_FILE, markdown),
+      evalReportWrite,
+    );
   } catch (err) {
     console.error('[eval/report] Failed to write .codesignal/report.md:', err);
   }
@@ -151,14 +155,6 @@ app.put('/api/eval/session', async (req, res) => {
     await enqueueSessionsWrite(async () => {
       await writeJsonFileAtomic(EVAL_SESSION_FILE, session);
     }, evalSessionWrite);
-    if (session.lastResult && typeof session.lastResult === 'object') {
-      await persistEvalReport({
-        model: session.model,
-        promptA: session.promptA,
-        promptB: session.compareMode ? session.promptB : undefined,
-        result: session.lastResult,
-      });
-    }
     res.json({ session });
   } catch (err) {
     console.error('[eval/session] Error:', err);

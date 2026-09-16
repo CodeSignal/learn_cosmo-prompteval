@@ -133,7 +133,7 @@ describe('PUT /api/eval/session', () => {
     expect(written.cases).toHaveLength(5);
   });
 
-  it('writes .codesignal/report.md when the session includes lastResult', async () => {
+  it('does not duplicate report history when the session autosaves lastResult', async () => {
     fs.readFile.mockImplementation(async (p) => {
       if (String(p).includes('session.config.json')) return '{}';
       throw new Error('ENOENT');
@@ -158,13 +158,10 @@ describe('PUT /api/eval/session', () => {
       });
 
     expect(res.status).toBe(200);
-    expect(fs.mkdir).toHaveBeenCalled();
     const reportCall = fs.writeFile.mock.calls.find((c) => String(c[0]).endsWith(`${path.sep}.codesignal${path.sep}report.md`)
       || String(c[0]).endsWith('/.codesignal/report.md')
       || String(c[0]).endsWith('.codesignal/report.md'));
-    expect(reportCall).toBeTruthy();
-    expect(String(reportCall[1])).toContain('# Prompt Evaluation Report');
-    expect(String(reportCall[1])).toContain('Capital of {{input}}');
+    expect(reportCall).toBeUndefined();
   });
 });
 
@@ -251,7 +248,9 @@ describe('POST /api/eval/compare', () => {
     fs.writeFile.mockResolvedValue(undefined);
     fs.readFile.mockImplementation(async (p) => {
       if (String(p).includes('session.config.json')) return '{}';
-      throw new Error('ENOENT');
+      const err = new Error('ENOENT');
+      err.code = 'ENOENT';
+      throw err;
     });
   });
 
@@ -275,6 +274,7 @@ describe('POST /api/eval/compare', () => {
       || String(c[0]).includes('.codesignal/report.md'));
     expect(reportCall).toBeTruthy();
     expect(String(reportCall[1])).toContain('# Prompt Evaluation Report');
+    expect(String(reportCall[1])).toContain('## Evaluation 1');
     expect(String(reportCall[1])).toContain('Answer briefly.');
   });
 
