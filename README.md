@@ -36,7 +36,7 @@ Fill in `.env` with the API key (and optional `*_BASE_URL`) for the provider you
 - `allowUserModelSelection` (optional) — when `true`, show a model picker and let the saved eval session override `model` with an entry from `allowedModels` (default `false`)
 - `allowCompare` (optional) — when `true`, show “Compare with another prompt” so learners can A/B two prompts (default `false`)
 - `maxConcurrency` (optional) — max in-flight LLM calls during an evaluation (default `4`, range 1–50). Set to `1` for serial.
-- `defaults` (optional) — `minRuns`, `maxRuns`, `minCases`, `maxCases` (each 1–5)
+- `defaults` (optional) — `runs` sets the initial run count while `minRuns`, `maxRuns`, `minCases`, and `maxCases` set the editable limits (each 1–5)
 - `initialSession` (optional) — `promptA`, `promptB`, and `cases` (`input` / `expectedAnswer`)
 
 Without `session.config.json`, prompts and cases start empty and the UI uses the built-in 1–5 limits. Copy `session.config.example.json` to prefill the capital-city demo.

@@ -10,6 +10,7 @@
   "allowCompare": false,
   "maxConcurrency": 4,
   "defaults": {
+    "runs": 1,
     "minRuns": 1,
     "maxRuns": 5,
     "minCases": 1,

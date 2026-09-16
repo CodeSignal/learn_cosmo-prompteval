@@ -72,14 +72,27 @@ describe('normalizeSessionConfig', () => {
 
   it('applies optional default bounds', () => {
     const result = normalizeSessionConfig({
-      defaults: { minRuns: 2, maxRuns: 3, minCases: 1, maxCases: 2 },
+      defaults: { runs: 3, minRuns: 2, maxRuns: 3, minCases: 1, maxCases: 2 },
     });
     expect(result.defaults).toEqual({
+      runs: 3,
       minRuns: 2,
       maxRuns: 3,
       minCases: 1,
       maxCases: 2,
     });
+  });
+
+  it('clamps the initial run count to the configured run limits', () => {
+    expect(normalizeSessionConfig({
+      defaults: { runs: 1, minRuns: 1, maxRuns: 5 },
+    }).defaults.runs).toBe(1);
+    expect(normalizeSessionConfig({
+      defaults: { runs: 1, minRuns: 3, maxRuns: 5 },
+    }).defaults.runs).toBe(3);
+    expect(normalizeSessionConfig({
+      defaults: { runs: 99, minRuns: 1, maxRuns: 5 },
+    }).defaults.runs).toBe(5);
   });
 
   it('normalizes maxConcurrency and defaults when omitted', () => {

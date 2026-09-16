@@ -645,7 +645,7 @@ function applyDefaults(defaults) {
   MAX_CASES = defaults.maxCases;
   runCountEl.min = String(MIN_RUNS);
   runCountEl.max = String(MAX_RUNS);
-  runCountEl.value = String(clampRuns(runCountEl.value));
+  runCountEl.value = String(clampRuns(defaults.runs));
   if (runCountLabel) {
     runCountLabel.textContent = `Runs each (${MIN_RUNS}–${MAX_RUNS})`;
   }

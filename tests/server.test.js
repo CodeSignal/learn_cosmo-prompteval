@@ -188,6 +188,7 @@ describe('GET /api/session-config', () => {
     expect(res.body.allowCompare).toBe(false);
     expect(res.body.maxConcurrency).toBe(4);
     expect(res.body.defaults).toEqual({
+      runs: 2,
       minRuns: 1,
       maxRuns: 5,
       minCases: 1,
@@ -212,7 +213,7 @@ describe('GET /api/session-config', () => {
           allowUserModelSelection: true,
           allowCompare: true,
           maxConcurrency: 2,
-          defaults: { minRuns: 2, maxRuns: 4 },
+          defaults: { runs: 1, minRuns: 1, maxRuns: 4 },
           initialSession: {
             promptA: 'Prompt A',
             promptB: 'Prompt B',
@@ -232,7 +233,8 @@ describe('GET /api/session-config', () => {
     expect(res.body.allowUserModelSelection).toBe(true);
     expect(res.body.allowCompare).toBe(true);
     expect(res.body.maxConcurrency).toBe(2);
-    expect(res.body.defaults.minRuns).toBe(2);
+    expect(res.body.defaults.runs).toBe(1);
+    expect(res.body.defaults.minRuns).toBe(1);
     expect(res.body.defaults.maxRuns).toBe(4);
     expect(res.body.initialSession.promptA).toBe('Prompt A');
     expect(res.body.initialSession.promptB).toBe('Prompt B');
