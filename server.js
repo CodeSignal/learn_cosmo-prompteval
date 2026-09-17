@@ -31,15 +31,10 @@ let cachedLlm;
 let cachedModel;
 
 /**
- * @returns {Promise<{ model: string, allowedModels: string[], allowUserModelSelection: boolean }>}
+ * @returns {Promise<ReturnType<typeof normalizeSessionConfig>>}
  */
 async function sessionLlmConfig() {
-  const config = normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {}));
-  return {
-    model: config.model,
-    allowedModels: config.allowedModels,
-    allowUserModelSelection: config.allowUserModelSelection,
-  };
+  return normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {}));
 }
 
 /**
@@ -65,7 +60,11 @@ function getLlm(model, allowedModels) {
  * throws escape Express 4 async handlers as unhandled rejections.
  * @param {import('express').Response} res
  * @param {unknown} requestedModel
- * @returns {Promise<{ llm: import('./lib/llm/types.js').LlmProvider, model: string } | null>}
+ * @returns {Promise<{
+ *   llm: import('./lib/llm/types.js').LlmProvider,
+ *   model: string,
+ *   config: ReturnType<typeof normalizeSessionConfig>,
+ * } | null>}
  */
 async function resolveLlm(res, requestedModel) {
   try {
@@ -82,7 +81,7 @@ async function resolveLlm(res, requestedModel) {
       res.status(503).json({ error: `${requiredApiKeyName(model)} is not configured` });
       return null;
     }
-    return { llm, model };
+    return { llm, model, config };
   } catch (err) {
     const message = err instanceof Error && err.message
       ? err.message
@@ -136,7 +135,10 @@ const evalSessionWrite = { chain: Promise.resolve() };
 
 async function sessionLimitsFromConfig() {
   const config = normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {}));
-  return config.defaults;
+  return {
+    ...config.defaults,
+    promptTemplating: config.features.promptTemplating,
+  };
 }
 
 // One working eval session (prompts, cases, settings, last results).
@@ -168,7 +170,7 @@ app.put('/api/eval/session', async (req, res) => {
 app.post('/api/eval/compare', async (req, res) => {
   const resolved = await resolveLlm(res, req.body?.model);
   if (!resolved) return;
-  const { llm, model } = resolved;
+  const { llm, model, config } = resolved;
 
   const {
     promptA,
@@ -178,6 +180,7 @@ app.post('/api/eval/compare', async (req, res) => {
     runs,
     expectedAnswer,
     metricId,
+    examples,
   } = req.body ?? {};
 
   if (typeof promptA !== 'string') {
@@ -247,11 +250,15 @@ app.post('/api/eval/compare', async (req, res) => {
             : []),
         ],
         cases: Array.isArray(cases) ? cases : undefined,
+        examples: config.features.promptTemplating.allowExamples && Array.isArray(examples)
+          ? examples
+          : [],
+        promptTemplating: config.features.promptTemplating,
         input: typeof input === 'string' ? input : '',
         expectedAnswer: typeof expectedAnswer === 'string' ? expectedAnswer : '',
         metricId: typeof metricId === 'string' && metricId ? metricId : DEFAULT_METRIC_ID,
         runs,
-        maxConcurrency: normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {})).maxConcurrency,
+        maxConcurrency: config.maxConcurrency,
         onProgress: sendEvent
           ? (progress) => {
             sendEvent('progress', {
@@ -282,6 +289,8 @@ app.post('/api/eval/compare', async (req, res) => {
       || err?.code === 'INVALID_PROMPT'
       || err?.code === 'INVALID_CASE'
       || err?.code === 'TOO_MANY_CASES'
+      || err?.code === 'EXAMPLES_PLACEHOLDER_REQUIRED'
+      || err?.code === 'UNRESOLVED_PLACEHOLDER'
     ) {
       if (!res.headersSent) {
         return res.status(400).json({ error: err.message });

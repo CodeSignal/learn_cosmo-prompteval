@@ -184,6 +184,25 @@ describe('GET /api/session-config', () => {
     expect(res.body.allowUserModelSelection).toBe(false);
     expect(res.body.allowCompare).toBe(false);
     expect(res.body.maxConcurrency).toBe(4);
+    expect(res.body.features).toEqual({
+      promptTemplating: {
+        enabled: false,
+        templateEditable: false,
+        showPreview: false,
+        allowExamples: false,
+        fields: [],
+        variableNames: [],
+        dynamicFields: false,
+        strictFields: false,
+        builder: {
+          enabled: false,
+          availableComponents: [],
+          defaultComponents: [],
+          allowMultipleInputs: false,
+          showExpectedAnswer: false,
+        },
+      },
+    });
     expect(res.body.defaults).toEqual({
       runs: 2,
       minRuns: 1,
@@ -209,6 +228,16 @@ describe('GET /api/session-config', () => {
           ],
           allowUserModelSelection: true,
           allowCompare: true,
+          features: {
+            promptTemplating: {
+              enabled: true,
+              allowExamples: true,
+              fields: [
+                { name: 'input', label: 'Question' },
+                { name: 'role', label: 'Role' },
+              ],
+            },
+          },
           maxConcurrency: 2,
           defaults: { runs: 1, minRuns: 1, maxRuns: 4 },
           initialSession: {
@@ -229,6 +258,26 @@ describe('GET /api/session-config', () => {
     ]);
     expect(res.body.allowUserModelSelection).toBe(true);
     expect(res.body.allowCompare).toBe(true);
+    expect(res.body.features.promptTemplating).toEqual({
+      enabled: true,
+      templateEditable: false,
+      showPreview: true,
+      allowExamples: true,
+      fields: [
+        { name: 'input', label: 'Question', multiline: true },
+        { name: 'role', label: 'Role', multiline: true },
+      ],
+      variableNames: ['role'],
+      dynamicFields: false,
+      strictFields: false,
+      builder: {
+        enabled: false,
+        availableComponents: [],
+        defaultComponents: [],
+        allowMultipleInputs: false,
+        showExpectedAnswer: false,
+      },
+    });
     expect(res.body.maxConcurrency).toBe(2);
     expect(res.body.defaults.runs).toBe(1);
     expect(res.body.defaults.minRuns).toBe(1);
@@ -236,7 +285,7 @@ describe('GET /api/session-config', () => {
     expect(res.body.initialSession.promptA).toBe('Prompt A');
     expect(res.body.initialSession.promptB).toBe('Prompt B');
     expect(res.body.initialSession.cases).toEqual([
-      { input: 'France', expectedAnswer: 'Paris' },
+      { input: 'France', expectedAnswer: 'Paris', variables: { role: '' } },
     ]);
   });
 });
