@@ -88,6 +88,9 @@
               <option value="contains">Contains</option>
               <option value="string-similarity">Simple string similarity</option>
               <option value="word-overlap-f1">Word overlap (F1)</option>
+              <option value="regex-match">Regular expression match</option>
+              <option value="valid-json">Valid JSON (function check)</option>
+              <option value="llm-judge">LLM judge</option>
             </select>
           </label>
 
@@ -103,6 +106,64 @@
               inputmode="numeric"
             />
           </label>
+        </div>
+
+        <div class="eval-checker-help" id="llmJudgeHelp" hidden>
+          <div class="eval-checker-help__heading">
+            <span class="eval-checker-help__badge" aria-hidden="true">LLM</span>
+            <div>
+              <p class="body-xsmall eval-checker-help__title">How LLM judge scores each run</p>
+              <p class="body-xxsmall eval-checker-help__summary">
+                A fixed judge model checks meaning with a second call, instead of comparing text mechanically.
+              </p>
+            </div>
+          </div>
+          <ol class="body-xxsmall eval-checker-help__steps">
+            <li>Your prompt generates a candidate output.</li>
+            <li>The judge receives that output and the Expected Answer.</li>
+            <li>The judge returns a correctness score from 0 to 1.</li>
+          </ol>
+          <p class="body-xxsmall eval-checker-help__note" id="llmJudgeHelpNote"></p>
+        </div>
+
+        <div class="eval-checker-help" id="regexMatchHelp" hidden>
+          <div class="eval-checker-help__heading">
+            <span class="eval-checker-help__badge" aria-hidden="true">REGEX</span>
+            <div>
+              <p class="body-xsmall eval-checker-help__title">How regular expression match scores each run</p>
+              <p class="body-xxsmall eval-checker-help__summary">
+                Checks whether the output follows a pattern, such as an ID, date, or required response format.
+              </p>
+            </div>
+          </div>
+          <ol class="body-xxsmall eval-checker-help__steps">
+            <li>Write a regular expression in Expected Answer.</li>
+            <li>The checker tests each generated output against that pattern.</li>
+            <li>A match scores 1; no match or an invalid pattern scores 0.</li>
+          </ol>
+          <p class="body-xxsmall eval-checker-help__note">
+            Example: <code>^ABC-\d{3}$</code> matches <code>ABC-123</code>. Use <code>^</code> and <code>$</code> when the whole output must match.
+          </p>
+        </div>
+
+        <div class="eval-checker-help" id="validJsonHelp" hidden>
+          <div class="eval-checker-help__heading">
+            <span class="eval-checker-help__badge" aria-hidden="true">JSON</span>
+            <div>
+              <p class="body-xsmall eval-checker-help__title">How Valid JSON scores each run</p>
+              <p class="body-xxsmall eval-checker-help__summary">
+                Checks whether the complete output is correctly formatted JSON that an application can parse.
+              </p>
+            </div>
+          </div>
+          <ol class="body-xxsmall eval-checker-help__steps">
+            <li>The checker trims the generated output.</li>
+            <li>It attempts to parse the complete output as JSON.</li>
+            <li>Valid JSON scores 1; invalid JSON scores 0.</li>
+          </ol>
+          <p class="body-xxsmall eval-checker-help__note">
+            Expected Answer is not required. Markdown fences or explanatory text outside the JSON make the output invalid.
+          </p>
         </div>
 
         <details class="eval-details" id="casesDetails" open>

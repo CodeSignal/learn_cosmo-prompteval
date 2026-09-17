@@ -181,6 +181,14 @@ describe('GET /api/session-config', () => {
       'google/gemini-3.6-flash',
       '~deepseek/deepseek-v4-flash-latest',
     ]);
+    expect(res.body.allowedMetricIds).toEqual([
+      'exact-match',
+      'exact-match-ci',
+      'contains',
+      'string-similarity',
+      'word-overlap-f1',
+    ]);
+    expect(res.body.llmJudgeModel).toBeNull();
     expect(res.body.allowUserModelSelection).toBe(false);
     expect(res.body.allowCompare).toBe(false);
     expect(res.body.maxConcurrency).toBe(4);
@@ -209,6 +217,8 @@ describe('GET /api/session-config', () => {
           ],
           allowUserModelSelection: true,
           allowCompare: true,
+          allowedMetricIds: ['exact-match', 'valid-json', 'llm-judge'],
+          llmJudgeModel: 'anthropic/claude-sonnet-4-6',
           maxConcurrency: 2,
           defaults: { runs: 1, minRuns: 1, maxRuns: 4 },
           initialSession: {
@@ -229,6 +239,8 @@ describe('GET /api/session-config', () => {
     ]);
     expect(res.body.allowUserModelSelection).toBe(true);
     expect(res.body.allowCompare).toBe(true);
+    expect(res.body.allowedMetricIds).toEqual(['exact-match', 'valid-json', 'llm-judge']);
+    expect(res.body.llmJudgeModel).toBe('anthropic/claude-sonnet-4-6');
     expect(res.body.maxConcurrency).toBe(2);
     expect(res.body.defaults.runs).toBe(1);
     expect(res.body.defaults.minRuns).toBe(1);
@@ -254,6 +266,108 @@ describe('POST /api/eval/compare', () => {
     });
   });
 
+  it('rejects opt-in metrics when session config does not enable them', async () => {
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({
+        promptA: 'Return JSON',
+        input: 'France',
+        runs: 1,
+        metricId: 'valid-json',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/not enabled/);
+    expect(runPromptComparison).not.toHaveBeenCalled();
+  });
+
+  it('allows an opt-in metric when session config enables it', async () => {
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({
+          allowedMetricIds: ['exact-match', 'valid-json'],
+        });
+      }
+      const err = new Error('ENOENT');
+      err.code = 'ENOENT';
+      throw err;
+    });
+    runPromptComparison.mockResolvedValue({
+      conditions: { metricId: 'valid-json', runs: 1, caseCount: 1 },
+      cases: [],
+      prompts: [],
+      comparison: { outcome: 'unscored', winnerId: null, means: {} },
+    });
+
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({
+        promptA: 'Return JSON',
+        input: 'France',
+        runs: 1,
+        metricId: 'valid-json',
+      });
+
+    expect(res.status).toBe(200);
+    expect(runPromptComparison).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ metricId: 'valid-json' }),
+    );
+  });
+
+  it('uses the server-configured fixed model for LLM judging', async () => {
+    resetLlmCache();
+    createLlmProvider.mockClear();
+    fs.readFile.mockImplementation(async (p) => {
+      if (String(p).includes('session.config.json')) {
+        return JSON.stringify({
+          model: 'anthropic/claude-haiku-4-5-20251001',
+          allowedModels: ['anthropic/claude-haiku-4-5-20251001'],
+          allowedMetricIds: ['llm-judge'],
+          llmJudgeModel: 'anthropic/claude-sonnet-4-6',
+        });
+      }
+      const err = new Error('ENOENT');
+      err.code = 'ENOENT';
+      throw err;
+    });
+    runPromptComparison.mockResolvedValue({
+      conditions: {
+        metricId: 'llm-judge',
+        judgeModel: 'anthropic/claude-sonnet-4-6',
+        runs: 1,
+        caseCount: 1,
+      },
+      cases: [],
+      prompts: [],
+      comparison: { outcome: 'unscored', winnerId: null, means: {} },
+    });
+
+    const res = await request(app)
+      .post('/api/eval/compare')
+      .send({
+        promptA: 'Answer naturally',
+        input: 'France',
+        expectedAnswer: 'Paris',
+        runs: 1,
+        metricId: 'llm-judge',
+      });
+
+    expect(res.status).toBe(200);
+    expect(createLlmProvider).toHaveBeenCalledWith(
+      expect.anything(),
+      'anthropic/claude-sonnet-4-6',
+    );
+    expect(runPromptComparison).toHaveBeenCalledWith(
+      expect.objectContaining({
+        judgeLlm: expect.anything(),
+        judgeModel: 'anthropic/claude-sonnet-4-6',
+      }),
+      expect.anything(),
+    );
+    resetLlmCache();
+  });
+
   it('writes .codesignal/report.md after a successful compare', async () => {
     runPromptComparison.mockResolvedValue({
       conditions: { metricId: 'exact-match', runs: 1, caseCount: 1 },
@@ -270,8 +384,8 @@ describe('POST /api/eval/compare', () => {
 
     expect(res.status).toBe(200);
     expect(fs.mkdir).toHaveBeenCalled();
-    const reportCall = fs.writeFile.mock.calls.find((c) => String(c[0]).includes(`${path.sep}.codesignal${path.sep}report.md`)
-      || String(c[0]).includes('.codesignal/report.md'));
+    const reportCall = fs.writeFile.mock.calls.filter((c) => String(c[0]).includes(`${path.sep}.codesignal${path.sep}report.md`)
+      || String(c[0]).includes('.codesignal/report.md')).at(-1);
     expect(reportCall).toBeTruthy();
     expect(String(reportCall[1])).toContain('# Prompt Evaluation Report');
     expect(String(reportCall[1])).toContain('## Evaluation 1');

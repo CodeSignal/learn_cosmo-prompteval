@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { DEFAULT_CONCURRENCY } from '../lib/concurrency.js';
 import {
   DEFAULT_ALLOWED_MODELS,
+  DEFAULT_ALLOWED_METRIC_IDS,
   DEFAULT_MODEL_REF,
   FALLBACK_DEFAULTS,
   assertAllowedModel,
   normalizeAllowedModels,
+  normalizeAllowedMetricIds,
   normalizeSessionConfig,
 } from '../lib/session-config.js';
 
@@ -14,6 +16,8 @@ describe('normalizeSessionConfig', () => {
     expect(normalizeSessionConfig(undefined)).toEqual({
       model: DEFAULT_MODEL_REF,
       allowedModels: [...DEFAULT_ALLOWED_MODELS],
+      allowedMetricIds: [...DEFAULT_ALLOWED_METRIC_IDS],
+      llmJudgeModel: null,
       allowUserModelSelection: false,
       allowCompare: false,
       maxConcurrency: DEFAULT_CONCURRENCY,
@@ -23,6 +27,8 @@ describe('normalizeSessionConfig', () => {
     expect(normalizeSessionConfig({})).toEqual({
       model: DEFAULT_MODEL_REF,
       allowedModels: [...DEFAULT_ALLOWED_MODELS],
+      allowedMetricIds: [...DEFAULT_ALLOWED_METRIC_IDS],
+      llmJudgeModel: null,
       allowUserModelSelection: false,
       allowCompare: false,
       maxConcurrency: DEFAULT_CONCURRENCY,
@@ -52,6 +58,14 @@ describe('normalizeSessionConfig', () => {
     expect(normalizeSessionConfig({ allowCompare: true }).allowCompare).toBe(true);
     expect(normalizeSessionConfig({ allowCompare: false }).allowCompare).toBe(false);
     expect(normalizeSessionConfig({ allowCompare: 'true' }).allowCompare).toBe(false);
+  });
+
+  it('normalizes an optional fixed LLM judge model', () => {
+    expect(normalizeSessionConfig({
+      llmJudgeModel: '  anthropic/claude-sonnet-4-6  ',
+    }).llmJudgeModel).toBe('anthropic/claude-sonnet-4-6');
+    expect(normalizeSessionConfig({ llmJudgeModel: 'not-a-model' }).llmJudgeModel).toBeNull();
+    expect(normalizeSessionConfig({}).llmJudgeModel).toBeNull();
   });
 
   it('defaults model to the first allowed entry when the default is not listed', () => {
@@ -170,6 +184,23 @@ describe('normalizeSessionConfig', () => {
       promptB: '',
       cases: [],
     });
+  });
+});
+
+describe('normalizeAllowedMetricIds', () => {
+  it('keeps Course 1 metrics when configuration is omitted', () => {
+    expect(normalizeAllowedMetricIds(undefined)).toEqual(DEFAULT_ALLOWED_METRIC_IDS);
+    expect(normalizeAllowedMetricIds([])).toEqual(DEFAULT_ALLOWED_METRIC_IDS);
+  });
+
+  it('enables only known configured metrics', () => {
+    expect(normalizeAllowedMetricIds([
+      'exact-match',
+      'valid-json',
+      'llm-judge',
+      'unknown',
+      'valid-json',
+    ])).toEqual(['exact-match', 'valid-json', 'llm-judge']);
   });
 });
 
