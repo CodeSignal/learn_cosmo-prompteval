@@ -70,6 +70,92 @@ describe('normalizeEvalSession', () => {
     expect(normalizeEvalSession({ runs: 0 }).runs).toBe(FALLBACK_DEFAULTS.minRuns);
     expect(normalizeEvalSession({ compareMode: 'yes' }).compareMode).toBe(false);
   });
+
+  it('keeps template variables and examples only when the feature is enabled', () => {
+    const raw = {
+      cases: [{
+        id: 'case-1',
+        input: 'Hello',
+        expectedAnswer: 'Hi',
+        variables: { role: 'tutor', ignored: 'drop' },
+      }],
+      examples: [{
+        id: 'example-1',
+        input: 'Thanks',
+        idealOutput: 'You are welcome',
+      }],
+    };
+    const promptTemplating = {
+      enabled: true,
+      showPreview: true,
+      allowExamples: true,
+      variableNames: ['role'],
+    };
+
+    const enabled = normalizeEvalSession(raw, { promptTemplating });
+    expect(enabled.cases[0].variables).toEqual({ role: 'tutor' });
+    expect(enabled.examples).toEqual([{
+      id: 'example-1',
+      input: 'Thanks',
+      idealOutput: 'You are welcome',
+    }]);
+
+    const disabled = normalizeEvalSession(raw);
+    expect(disabled.cases[0]).not.toHaveProperty('variables');
+    expect(disabled).not.toHaveProperty('examples');
+  });
+
+  it('keeps only configured structured prompt components', () => {
+    const result = normalizeEvalSession({
+      promptComponents: {
+        active: ['context', 'examples', 'unknown'],
+        instruction: 'Summarize the input.',
+        context: 'For a beginner.',
+        constraints: 12,
+        outputFormat: 'One sentence.',
+      },
+    }, {
+      promptTemplating: {
+        enabled: true,
+        allowExamples: true,
+        variableNames: [],
+        builder: {
+          enabled: true,
+          availableComponents: ['context', 'examples', 'constraints'],
+        },
+      },
+    });
+
+    expect(result.promptComponents).toEqual({
+      active: ['context', 'examples'],
+      instruction: 'Summarize the input.',
+      context: 'For a beginner.',
+      constraints: '',
+      outputFormat: 'One sentence.',
+    });
+  });
+
+  it('derives saved case variables from the current template', () => {
+    const result = normalizeEvalSession({
+      promptA: '{{context}}\n{{input}}\n{{constraint}}',
+      cases: [{
+        input: 'Question',
+        variables: { context: 'Background', constraint: 'Be brief', ignored: 'drop' },
+      }],
+    }, {
+      promptTemplating: {
+        enabled: true,
+        dynamicFields: true,
+        allowExamples: false,
+        variableNames: [],
+      },
+    });
+
+    expect(result.cases[0].variables).toEqual({
+      context: 'Background',
+      constraint: 'Be brief',
+    });
+  });
 });
 
 const completeResult = {

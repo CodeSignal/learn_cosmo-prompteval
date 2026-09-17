@@ -35,11 +35,50 @@ Fill in `.env` with the API key (and optional `*_BASE_URL`) for the provider you
 - `allowedModels` (optional) — picker list of `provider/model-id` refs (defaults to Anthropic, OpenAI, Gemini, and DeepSeek examples above)
 - `allowUserModelSelection` (optional) — when `true`, show a model picker and let the saved eval session override `model` with an entry from `allowedModels` (default `false`)
 - `allowCompare` (optional) — when `true`, show “Compare with another prompt” so learners can A/B two prompts (default `false`)
+- `features.promptTemplating` (optional) — enables reusable named blanks, shared examples, and a filled-in prompt preview. Missing configuration keeps the current Course 1 UI and `{{input}}` behavior unchanged.
 - `maxConcurrency` (optional) — max in-flight LLM calls during an evaluation (default `4`, range 1–50). Set to `1` for serial.
 - `defaults` (optional) — `runs` sets the initial run count while `minRuns`, `maxRuns`, `minCases`, and `maxCases` set the editable limits (each 1–5)
 - `initialSession` (optional) — `promptA`, `promptB`, and `cases` (`input` / `expectedAnswer`)
 
 Without `session.config.json`, prompts and cases start empty and the UI uses the built-in 1–5 limits. Copy `session.config.example.json` to prefill the capital-city demo.
+
+### Config-gated prompt templating
+
+Later-course tasks can let the prompt template define the fields shown in every case without changing Course 1:
+
+```json
+{
+  "allowCompare": false,
+  "features": {
+    "promptTemplating": {
+      "enabled": true,
+      "templateEditable": true,
+      "showPreview": true,
+      "dynamicFields": true,
+      "fields": [
+        { "name": "context", "label": "Context" },
+        { "name": "input", "label": "Input" },
+        { "name": "constraint", "label": "Constraint" }
+      ]
+    }
+  },
+  "initialSession": {
+    "promptA": "Use the context to answer the input.\n\nContext:\n{{context}}\n\nInput:\n{{input}}\n\nConstraint:\n{{constraint}}",
+    "cases": [
+      {
+        "input": "",
+        "expectedAnswer": "",
+        "variables": {
+          "context": "",
+          "constraint": ""
+        }
+      }
+    ]
+  }
+}
+```
+
+With `dynamicFields`, placeholders such as `{{context}}`, `{{input}}`, and `{{constraint}}` automatically become labeled fields in each case. Learners edit the template as normal text, while placeholder values can differ across cases. Text written directly in the template stays shared. Expected output is used only for scoring, and each case can show its exact rendered prompt.
 
 Work-in-progress (prompts, cases, settings, and the last results) is stored in `eval-session.json`. That file is local and not checked in. A saved session wins over `initialSession` on reload.
 

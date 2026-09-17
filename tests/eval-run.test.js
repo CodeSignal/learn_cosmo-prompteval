@@ -123,6 +123,23 @@ describe('runSingleEval / runEvalBatch', () => {
     });
   });
 
+  it('renders named variables and shared examples before evaluation', async () => {
+    const { deps, complete } = makeDeps();
+    await runEvalBatch(deps, {
+      promptTemplate: 'You are a {{role}}.\n\n{{examples}}\n\nQuestion: {{input}}',
+      input: 'Where is my refund?',
+      templateVariables: { role: 'support agent' },
+      examples: [{ input: 'I was charged twice.', idealOutput: 'billing' }],
+      strictTemplating: true,
+      runs: 1,
+    });
+
+    const message = complete.mock.calls[0][0].messages[0].content;
+    expect(message).toContain('You are a support agent.');
+    expect(message).toContain('Example 1\nInput: I was charged twice.\nIdeal output: billing');
+    expect(message).toContain('Question: Where is my refund?');
+  });
+
   it('records an error status when complete() rejects', async () => {
     const { deps, complete } = makeDeps();
     complete.mockRejectedValueOnce(new Error('rate limited'));

@@ -72,6 +72,36 @@ describe('normalizeCases', () => {
     const cases = Array.from({ length: MAX_EVAL_CASES + 1 }, (_, i) => ({ input: String(i) }));
     expect(() => normalizeCases({ cases })).toThrow(/At most/);
   });
+
+  it('keeps only configured template variables when templating is enabled', () => {
+    expect(normalizeCases({
+      promptTemplating: { enabled: true, variableNames: ['role', 'tone'] },
+      cases: [{
+        input: 'Hello',
+        variables: { role: 'tutor', tone: 'warm', ignored: 'drop' },
+      }],
+    })[0]).toMatchObject({
+      input: 'Hello',
+      variables: { role: 'tutor', tone: 'warm' },
+    });
+  });
+
+  it('derives allowed variables from prompt placeholders in dynamic mode', () => {
+    expect(normalizeCases({
+      prompts: [{
+        id: 'A',
+        promptTemplate: '{{context}}\n{{input}}\n{{constraint}}',
+      }],
+      promptTemplating: { enabled: true, dynamicFields: true },
+      cases: [{
+        input: 'Hello',
+        variables: { context: 'Background', constraint: 'Be brief', ignored: 'drop' },
+      }],
+    })[0]).toMatchObject({
+      input: 'Hello',
+      variables: { context: 'Background', constraint: 'Be brief' },
+    });
+  });
 });
 
 describe('runPromptComparison', () => {
@@ -183,6 +213,39 @@ describe('runPromptComparison', () => {
     expect(result.prompts).toHaveLength(1);
     expect(result.prompts[0].aggregate.mean).toBe(1);
     expect(result.comparison.outcome).toBe('unscored');
+  });
+
+  it('passes template variables and examples into each batch', async () => {
+    const runBatch = vi.fn().mockResolvedValueOnce(
+      mockBatch({ renderedPrompt: 'rendered', mean: 1, output: 'ok', score: 1 }),
+    );
+    await runPromptComparison(
+      { llm: { complete: vi.fn() } },
+      {
+        prompts: [{
+          id: 'A',
+          promptTemplate: '{{role}}\n{{examples}}\n{{input}}',
+        }],
+        cases: [{
+          input: 'Question',
+          expectedAnswer: 'ok',
+          variables: { role: 'Tutor' },
+        }],
+        examples: [{ input: 'Hi', idealOutput: 'Hello' }],
+        promptTemplating: { enabled: true, allowExamples: true, variableNames: ['role'] },
+        runs: 1,
+        runBatch,
+      },
+    );
+
+    expect(runBatch).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        templateVariables: { role: 'Tutor' },
+        examples: [{ input: 'Hi', idealOutput: 'Hello' }],
+        strictTemplating: true,
+      }),
+    );
   });
 
   it('shares maxConcurrency across prompt/case runs', async () => {
