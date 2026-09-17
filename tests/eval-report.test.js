@@ -74,6 +74,28 @@ describe('buildEvalReportMarkdown', () => {
     expect(md).toContain('### Prompt B');
   });
 
+  it('identifies a separately configured judge model', () => {
+    const md = buildEvalReportMarkdown({
+      model: 'openai/generation-model',
+      provider: 'openai',
+      promptA: 'Answer.',
+      result: {
+        conditions: {
+          metricId: 'llm-judge',
+          judgeModel: 'anthropic/claude-sonnet-4-6',
+          runs: 1,
+          caseCount: 1,
+        },
+        prompts: [],
+        cases: [],
+        comparison: { outcome: 'unscored', winnerId: null, means: {} },
+      },
+    });
+
+    expect(md).toContain('| Model | openai/generation-model |');
+    expect(md).toContain('| Judge model | anthropic/claude-sonnet-4-6 |');
+  });
+
   it('records template examples, case variables, and the filled-in prompt', () => {
     const md = buildEvalReportMarkdown({
       model: 'anthropic/test-model',

@@ -123,6 +123,77 @@ describe('runSingleEval / runEvalBatch', () => {
     });
   });
 
+  it('runs a function checker without an expected answer', async () => {
+    const { deps, complete } = makeDeps();
+    complete.mockResolvedValue({ text: '{"capital":"Paris"}' });
+
+    const batch = await runEvalBatch(deps, {
+      promptTemplate: 'Return JSON',
+      input: '',
+      runs: 1,
+      metricId: 'valid-json',
+    });
+
+    expect(batch.metricId).toBe('valid-json');
+    expect(batch.results[0].score).toBe(1);
+    expect(batch.aggregate?.mean).toBe(1);
+  });
+
+  it('uses an independent LLM call to judge semantic correctness', async () => {
+    const { deps, complete } = makeDeps();
+    complete
+      .mockResolvedValueOnce({ text: 'The capital is Paris.' })
+      .mockResolvedValueOnce({ text: '0.95' });
+
+    const result = await runSingleEval(deps, {
+      renderedPrompt: 'Capital of France?',
+      run: 1,
+      expectedAnswer: 'Paris',
+      metricId: 'llm-judge',
+    });
+
+    expect(result.score).toBe(0.95);
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1][0]).toMatchObject({
+      temperature: 0,
+      messages: [{
+        role: 'user',
+        content: expect.stringContaining('Expected answer:\nParis'),
+      }],
+    });
+  });
+
+  it('uses a separately configured provider for LLM judging', async () => {
+    const generationComplete = vi.fn().mockResolvedValue({ text: 'Paris, France.' });
+    const judgeComplete = vi.fn().mockResolvedValue({ text: '0.9' });
+    const deps = {
+      llm: {
+        name: 'openai',
+        model: 'generation-model',
+        complete: generationComplete,
+      },
+      judgeLlm: {
+        name: 'anthropic',
+        model: 'judge-model',
+        complete: judgeComplete,
+      },
+      judgeModel: 'judge-model',
+      systemPrompt: 'You are being evaluated.',
+    };
+
+    const result = await runSingleEval(deps, {
+      renderedPrompt: 'Capital of France?',
+      run: 1,
+      expectedAnswer: 'Paris',
+      metricId: 'llm-judge',
+    });
+
+    expect(result.score).toBe(0.9);
+    expect(generationComplete).toHaveBeenCalledOnce();
+    expect(judgeComplete).toHaveBeenCalledOnce();
+    expect(judgeComplete.mock.calls[0][0].model).toBe('judge-model');
+  });
+
   it('renders named variables and shared examples before evaluation', async () => {
     const { deps, complete } = makeDeps();
     await runEvalBatch(deps, {

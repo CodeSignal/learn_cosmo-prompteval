@@ -58,6 +58,10 @@ const casesHeading = document.getElementById('casesHeading');
 const casesHint = document.getElementById('casesHint');
 const addCaseBtn = document.getElementById('addCaseBtn');
 const metricSelectEl = document.getElementById('metricSelect');
+const llmJudgeHelp = document.getElementById('llmJudgeHelp');
+const llmJudgeHelpNote = document.getElementById('llmJudgeHelpNote');
+const regexMatchHelp = document.getElementById('regexMatchHelp');
+const validJsonHelp = document.getElementById('validJsonHelp');
 const modelSelectWrap = document.getElementById('modelSelectWrap');
 const modelSelectEl = document.getElementById('modelSelect');
 const runCountEl = document.getElementById('runCount');
@@ -85,6 +89,8 @@ let ALLOW_USER_MODEL_SELECTION = false;
 let ALLOW_COMPARE = false;
 let CONFIG_MODEL = '';
 let ALLOWED_MODELS = [];
+let ALLOWED_METRIC_IDS = [];
+let LLM_JUDGE_MODEL = '';
 let PROMPT_TEMPLATING = { ...DEFAULT_PROMPT_TEMPLATING };
 
 const COMPONENT_META = {
@@ -232,6 +238,7 @@ function sessionLimits() {
     minRuns: MIN_RUNS,
     maxRuns: MAX_RUNS,
     maxCases: MAX_CASES,
+    allowedMetricIds: ALLOWED_METRIC_IDS,
     promptTemplating: PROMPT_TEMPLATING,
   };
 }
@@ -1082,7 +1089,12 @@ function renderComparison(data) {
   caseDetailsPanel.open = false;
 
   const multi = isMultiPrompt(data);
-  const { runs, caseCount, durationMs } = data.conditions;
+  const {
+    runs,
+    caseCount,
+    durationMs,
+    judgeModel,
+  } = data.conditions;
   const duration = formatDuration(durationMs);
   resultsMeta.textContent = [
     isBuilderMode()
@@ -1091,6 +1103,7 @@ function renderComparison(data) {
     `${runs} run${runs === 1 ? '' : 's'} each`,
     duration,
     multi ? 'A vs B' : '',
+    judgeModel ? `Judge: ${judgeModel}` : '',
   ].filter(Boolean).join(' · ');
 
   renderVerdict(data);
@@ -1190,11 +1203,31 @@ function applyDefaults(defaults) {
   }
 }
 
+function updateMetricHelp() {
+  const metricId = metricSelectEl.value;
+  llmJudgeHelp.hidden = metricId !== 'llm-judge';
+  regexMatchHelp.hidden = metricId !== 'regex-match';
+  validJsonHelp.hidden = metricId !== 'valid-json';
+  if (metricId !== 'llm-judge') return;
+
+  const generationModel = ALLOW_USER_MODEL_SELECTION
+    ? modelSelectEl.value
+    : CONFIG_MODEL;
+  const judgeModel = LLM_JUDGE_MODEL || generationModel;
+  llmJudgeHelpNote.textContent = [
+    'Expected Answer is required',
+    `Judge model: ${judgeModel}`,
+    '2 model calls per run',
+  ].join(' · ');
+}
+
 function configureModelSelection(config) {
   ALLOW_USER_MODEL_SELECTION = config.allowUserModelSelection;
   ALLOW_COMPARE = config.allowCompare === true;
   CONFIG_MODEL = config.model;
   ALLOWED_MODELS = config.allowedModels;
+  ALLOWED_METRIC_IDS = config.allowedMetricIds;
+  LLM_JUDGE_MODEL = config.llmJudgeModel || '';
 
   modelSelectEl.replaceChildren(...ALLOWED_MODELS.map((model) => {
     const option = document.createElement('option');
@@ -1204,6 +1237,14 @@ function configureModelSelection(config) {
   }));
   modelSelectWrap.hidden = !ALLOW_USER_MODEL_SELECTION;
   modelSelectEl.disabled = !ALLOW_USER_MODEL_SELECTION;
+
+  metricSelectEl.querySelectorAll('option').forEach((option) => {
+    if (!ALLOWED_METRIC_IDS.includes(option.value)) option.remove();
+  });
+  if (!ALLOWED_METRIC_IDS.includes(metricSelectEl.value)) {
+    metricSelectEl.value = ALLOWED_METRIC_IDS[0];
+  }
+  updateMetricHelp();
 }
 
 function configureFeatures(config) {
@@ -1272,6 +1313,7 @@ function applySessionToDom() {
   if ([...metricSelectEl.options].some((opt) => opt.value === session.metricId)) {
     metricSelectEl.value = session.metricId;
   }
+  updateMetricHelp();
   runCountEl.value = String(clampRuns(session.runs));
   renderCases();
   renderExamples();
@@ -1547,11 +1589,13 @@ previewCaseSelect.addEventListener('change', updateTemplatePreview);
 
 metricSelectEl.addEventListener('change', () => {
   session.metricId = metricSelectEl.value;
+  updateMetricHelp();
   persistSessionNow();
 });
 
 modelSelectEl.addEventListener('change', () => {
   session.model = modelSelectEl.value;
+  updateMetricHelp();
   persistSessionNow();
 });
 

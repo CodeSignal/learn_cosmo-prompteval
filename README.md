@@ -35,12 +35,30 @@ Fill in `.env` with the API key (and optional `*_BASE_URL`) for the provider you
 - `allowedModels` (optional) — picker list of `provider/model-id` refs (defaults to Anthropic, OpenAI, Gemini, and DeepSeek examples above)
 - `allowUserModelSelection` (optional) — when `true`, show a model picker and let the saved eval session override `model` with an entry from `allowedModels` (default `false`)
 - `allowCompare` (optional) — when `true`, show “Compare with another prompt” so learners can A/B two prompts (default `false`)
+- `allowedMetricIds` (optional) — metrics shown in the picker and accepted by the API. When omitted, the original Course 1 metrics remain unchanged: `exact-match`, `exact-match-ci`, `contains`, `string-similarity`, and `word-overlap-f1`. Opt in to newer validation with `regex-match`, `valid-json`, and/or `llm-judge`.
+- `llmJudgeModel` (optional) — fixed `provider/model-id` used only by `llm-judge`. The server controls this value and the UI displays it to learners. When omitted, the generation model is reused for backward compatibility.
 - `features.promptTemplating` (optional) — enables reusable named blanks, shared examples, and a filled-in prompt preview. Missing configuration keeps the current Course 1 UI and `{{input}}` behavior unchanged.
 - `maxConcurrency` (optional) — max in-flight LLM calls during an evaluation (default `4`, range 1–50). Set to `1` for serial.
 - `defaults` (optional) — `runs` sets the initial run count while `minRuns`, `maxRuns`, `minCases`, and `maxCases` set the editable limits (each 1–5)
 - `initialSession` (optional) — `promptA`, `promptB`, and `cases` (`input` / `expectedAnswer`)
 
 Without `session.config.json`, prompts and cases start empty and the UI uses the built-in 1–5 limits. Copy `session.config.example.json` to prefill the capital-city demo.
+
+For example, a later course can enable every validation type without changing Course 1:
+
+```json
+{
+  "llmJudgeModel": "anthropic/claude-sonnet-4-6",
+  "allowedMetricIds": [
+    "exact-match",
+    "regex-match",
+    "valid-json",
+    "llm-judge"
+  ]
+}
+```
+
+`regex-match` treats Expected Answer as a regular expression. `valid-json` is a deterministic function checker and does not require an expected answer. `llm-judge` makes a second call to `llmJudgeModel` for each generated output and requires an expected answer. Function checkers are registered in code and enabled by ID; configuration never executes arbitrary JavaScript.
 
 ### Config-gated prompt templating
 

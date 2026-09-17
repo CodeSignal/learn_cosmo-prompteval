@@ -29,6 +29,10 @@ const PORT = Number.parseInt(process.env.PORT ?? '3000', 10) || 3000;
 let cachedLlm;
 /** @type {string | undefined} */
 let cachedModel;
+/** @type {import('./lib/llm/types.js').LlmProvider | null | undefined} */
+let cachedJudgeLlm;
+/** @type {string | undefined} */
+let cachedJudgeModel;
 
 /**
  * @returns {Promise<ReturnType<typeof normalizeSessionConfig>>}
@@ -92,6 +96,36 @@ async function resolveLlm(res, requestedModel) {
 }
 
 /**
+ * Resolve the server-configured judge provider. The client cannot override it.
+ * When omitted, retain the original same-model behavior for compatibility.
+ * @param {import('express').Response} res
+ * @param {ReturnType<typeof normalizeSessionConfig>} config
+ * @param {string} generationModel
+ * @returns {{ judgeLlm: import('./lib/llm/types.js').LlmProvider, judgeModel: string } | null}
+ */
+function resolveJudgeLlm(res, config, generationModel) {
+  const judgeModel = config.llmJudgeModel || generationModel;
+  try {
+    const keyName = requiredApiKeyName(judgeModel);
+    if (!process.env[keyName]) {
+      res.status(503).json({ error: `${keyName} is not configured for the LLM judge` });
+      return null;
+    }
+    if (!cachedJudgeLlm || cachedJudgeModel !== judgeModel) {
+      cachedJudgeLlm = createLlmProvider(process.env, judgeModel);
+      cachedJudgeModel = judgeModel;
+    }
+    return { judgeLlm: cachedJudgeLlm, judgeModel };
+  } catch (err) {
+    const message = err instanceof Error && err.message
+      ? err.message
+      : 'LLM judge provider is not configured';
+    res.status(503).json({ error: message });
+    return null;
+  }
+}
+
+/**
  * Persist Cosmo-facing report after a successful eval (best-effort).
  * @param {{
  *   model?: string,
@@ -117,6 +151,8 @@ async function persistEvalReport(payload) {
 export function resetLlmCache() {
   cachedLlm = undefined;
   cachedModel = undefined;
+  cachedJudgeLlm = undefined;
+  cachedJudgeModel = undefined;
 }
 
 // ── Middleware ────────────────────────────────────────────────
@@ -137,6 +173,7 @@ async function sessionLimitsFromConfig() {
   const config = normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {}));
   return {
     ...config.defaults,
+    allowedMetricIds: config.allowedMetricIds,
     promptTemplating: config.features.promptTemplating,
   };
 }
@@ -206,10 +243,14 @@ app.post('/api/eval/compare', async (req, res) => {
     return res.status(400).json({ error: 'expectedAnswer must be a string when provided' });
   }
   if (metricId !== undefined && metricId !== null && metricId !== '') {
-    if (!isValidMetricId(metricId)) {
-      return res.status(400).json({ error: `Unknown metricId "${metricId}"` });
+    if (!isValidMetricId(metricId) || !config.allowedMetricIds.includes(metricId)) {
+      return res.status(400).json({ error: `Metric "${metricId}" is not enabled` });
     }
   }
+  const judge = metricId === 'llm-judge'
+    ? resolveJudgeLlm(res, config, model)
+    : null;
+  if (metricId === 'llm-judge' && !judge) return;
   if (runs !== undefined && runs !== null) {
     const parsed = Number.parseInt(String(runs), 10);
     if (!Number.isFinite(parsed) || parsed < MIN_EVAL_RUNS || parsed > MAX_EVAL_RUNS) {
@@ -237,7 +278,11 @@ app.post('/api/eval/compare', async (req, res) => {
     }
 
     const result = await runPromptComparison(
-      { llm },
+      {
+        llm,
+        judgeLlm: judge?.judgeLlm,
+        judgeModel: judge?.judgeModel,
+      },
       {
         prompts: [
           {

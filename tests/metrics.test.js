@@ -4,10 +4,12 @@ import {
   METRICS,
   getMetric,
   isValidMetricId,
+  isScoringEnabled,
   scoreOutput,
   summarizeScores,
 } from '../lib/metrics/index.js';
 import { levenshteinDistance } from '../lib/metrics/string-similarity.js';
+import { parseJudgeScore } from '../lib/metrics/llm-judge.js';
 
 describe('metric registry', () => {
   it('lists the registered metrics', () => {
@@ -18,6 +20,9 @@ describe('metric registry', () => {
       'contains',
       'string-similarity',
       'word-overlap-f1',
+      'regex-match',
+      'valid-json',
+      'llm-judge',
     ]);
     expect(DEFAULT_METRIC_ID).toBe('exact-match');
   });
@@ -111,6 +116,23 @@ describe('scoreOutput / summarizeScores', () => {
   it('scores with the selected metric', () => {
     expect(scoreOutput('paris', 'Paris', 'exact-match')).toBe(0);
     expect(scoreOutput('paris', 'Paris', 'exact-match-ci')).toBe(1);
+  });
+
+  it('supports configured function checkers without an expected answer', () => {
+    expect(scoreOutput('{"ok":true}', '', 'valid-json')).toBe(1);
+    expect(scoreOutput('not json', '', 'valid-json')).toBe(0);
+    expect(isScoringEnabled('valid-json', '')).toBe(true);
+  });
+
+  it('supports regular expressions supplied as the expected answer', () => {
+    expect(scoreOutput('Order ABC-123', 'ABC-\\d{3}', 'regex-match')).toBe(1);
+    expect(scoreOutput('Order ABC-X', 'ABC-\\d{3}', 'regex-match')).toBe(0);
+  });
+
+  it('strictly parses LLM judge scores', () => {
+    expect(parseJudgeScore('0.75')).toBe(0.75);
+    expect(parseJudgeScore('1')).toBe(1);
+    expect(parseJudgeScore('Score: 1')).toBeNull();
   });
 
   it('aggregates mean/min/max', () => {

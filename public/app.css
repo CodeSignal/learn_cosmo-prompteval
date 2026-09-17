@@ -399,6 +399,62 @@ code {
   width: 100%;
 }
 
+.eval-checker-help {
+  padding: var(--UI-Spacing-spacing-m, 16px);
+  border: 1px solid var(--Colors-Base-Accent-Blue-300, #a9c7f5);
+  border-radius: var(--UI-Radius-radius-m, 8px);
+  background: var(--Colors-Base-Accent-Blue-50, #f4f8ff);
+  color: var(--Colors-Text-Body-Medium);
+}
+
+.eval-checker-help__heading {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--UI-Spacing-spacing-s, 12px);
+}
+
+.eval-checker-help__badge {
+  flex: 0 0 auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--Colors-Base-Accent-Blue-700, #2459a9);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+}
+
+.eval-checker-help__title,
+.eval-checker-help__summary,
+.eval-checker-help__note {
+  margin: 0;
+}
+
+.eval-checker-help__title {
+  font-weight: 600;
+}
+
+.eval-checker-help__summary {
+  margin-top: 2px;
+  color: var(--Colors-Text-Body-Light);
+}
+
+.eval-checker-help__steps {
+  margin: var(--UI-Spacing-spacing-s, 12px) 0;
+  padding-left: 1.25rem;
+}
+
+.eval-checker-help__steps li + li {
+  margin-top: 4px;
+}
+
+.eval-checker-help__note {
+  padding-top: var(--UI-Spacing-spacing-s, 12px);
+  border-top: 1px solid var(--Colors-Base-Accent-Blue-200, #d4e3fa);
+  font-weight: 500;
+}
+
 .eval-runs-input {
   max-width: 6rem;
 }
