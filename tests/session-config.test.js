@@ -4,10 +4,12 @@ import {
   DEFAULT_ALLOWED_MODELS,
   DEFAULT_ALLOWED_METRIC_IDS,
   DEFAULT_MODEL_REF,
+  DEFAULT_PROMPT_TEMPLATING,
   FALLBACK_DEFAULTS,
   assertAllowedModel,
   normalizeAllowedModels,
   normalizeAllowedMetricIds,
+  normalizePromptTemplating,
   normalizeSessionConfig,
 } from '../lib/session-config.js';
 
@@ -21,6 +23,7 @@ describe('normalizeSessionConfig', () => {
       allowUserModelSelection: false,
       allowCompare: false,
       maxConcurrency: DEFAULT_CONCURRENCY,
+      features: { promptTemplating: { ...DEFAULT_PROMPT_TEMPLATING } },
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
     });
@@ -32,6 +35,7 @@ describe('normalizeSessionConfig', () => {
       allowUserModelSelection: false,
       allowCompare: false,
       maxConcurrency: DEFAULT_CONCURRENCY,
+      features: { promptTemplating: { ...DEFAULT_PROMPT_TEMPLATING } },
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
     });
@@ -157,6 +161,65 @@ describe('normalizeSessionConfig', () => {
     });
   });
 
+  it('normalizes config-gated prompt templating, variables, and examples', () => {
+    const result = normalizeSessionConfig({
+      features: {
+        promptTemplating: {
+          enabled: true,
+          templateEditable: true,
+          showPreview: true,
+          allowExamples: true,
+          fields: [
+            { name: 'input', label: 'Customer message' },
+            { name: 'role', label: 'Agent role', multiline: false },
+            'tone',
+            'constructor',
+            '__proto__',
+            'bad name',
+            'role',
+          ],
+        },
+      },
+      initialSession: {
+        promptA: 'You are a {{role}}. Use a {{tone}} tone.',
+        cases: [{
+          input: 'Hello',
+          variables: { role: 'tutor', tone: 'warm', ignored: 'x' },
+        }],
+        examples: [{ input: 'Hi', idealOutput: 'Hello!' }],
+      },
+    });
+
+    expect(result.features.promptTemplating).toEqual({
+      enabled: true,
+      templateEditable: true,
+      showPreview: true,
+      allowExamples: true,
+      fields: [
+        { name: 'input', label: 'Customer message', multiline: true },
+        { name: 'role', label: 'Agent role', multiline: false },
+        { name: 'tone', label: 'Tone', multiline: true },
+      ],
+      variableNames: ['role', 'tone'],
+      dynamicFields: false,
+      strictFields: false,
+      builder: {
+        enabled: false,
+        availableComponents: [],
+        defaultComponents: [],
+        allowMultipleInputs: false,
+        showExpectedAnswer: false,
+      },
+    });
+    expect(result.initialSession.cases[0].variables).toEqual({
+      role: 'tutor',
+      tone: 'warm',
+    });
+    expect(result.initialSession.examples).toEqual([
+      { input: 'Hi', idealOutput: 'Hello!' },
+    ]);
+  });
+
   it('caps initialSession cases at the configured maxCases', () => {
     const result = normalizeSessionConfig({
       defaults: { maxCases: 2 },
@@ -201,6 +264,66 @@ describe('normalizeAllowedMetricIds', () => {
       'unknown',
       'valid-json',
     ])).toEqual(['exact-match', 'valid-json', 'llm-judge']);
+  });
+});
+
+describe('normalizePromptTemplating', () => {
+  it('keeps every feature off when configuration is missing', () => {
+    expect(normalizePromptTemplating(undefined)).toEqual(DEFAULT_PROMPT_TEMPLATING);
+  });
+
+  it('ignores child options until templating is enabled', () => {
+    expect(normalizePromptTemplating({
+      showPreview: true,
+      allowExamples: true,
+      fields: ['tone'],
+    })).toEqual(DEFAULT_PROMPT_TEMPLATING);
+  });
+
+  it('normalizes the structured builder component controls', () => {
+    expect(normalizePromptTemplating({
+      enabled: true,
+      builder: {
+        enabled: true,
+        availableComponents: ['context', 'examples', 'unknown'],
+        defaultComponents: ['examples', 'constraints'],
+        allowMultipleInputs: true,
+        showExpectedAnswer: true,
+      },
+    }).builder).toEqual({
+      enabled: true,
+      availableComponents: ['context', 'examples'],
+      defaultComponents: ['examples'],
+      allowMultipleInputs: true,
+      showExpectedAnswer: true,
+    });
+  });
+
+  it('derives initial case variables from prompt placeholders in dynamic mode', () => {
+    const result = normalizeSessionConfig({
+      features: {
+        promptTemplating: {
+          enabled: true,
+          dynamicFields: true,
+          strictFields: true,
+        },
+      },
+      initialSession: {
+        promptA: 'Context: {{context}}\nInput: {{input}}\nRule: {{constraint}}',
+        cases: [{
+          input: 'Question',
+          variables: { context: 'Background', constraint: 'Be brief', ignored: 'drop' },
+        }],
+      },
+    });
+
+    expect(result.features.promptTemplating.dynamicFields).toBe(true);
+    expect(result.features.promptTemplating.strictFields).toBe(true);
+    expect(result.features.promptTemplating.fields).toEqual([]);
+    expect(result.initialSession.cases[0].variables).toEqual({
+      context: 'Background',
+      constraint: 'Be brief',
+    });
   });
 });
 

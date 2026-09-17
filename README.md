@@ -37,6 +37,7 @@ Fill in `.env` with the API key (and optional `*_BASE_URL`) for the provider you
 - `allowCompare` (optional) — when `true`, show “Compare with another prompt” so learners can A/B two prompts (default `false`)
 - `allowedMetricIds` (optional) — metrics shown in the picker and accepted by the API. When omitted, the original Course 1 metrics remain unchanged: `exact-match`, `exact-match-ci`, `contains`, `string-similarity`, and `word-overlap-f1`. Opt in to newer validation with `regex-match`, `valid-json`, and/or `llm-judge`.
 - `llmJudgeModel` (optional) — fixed `provider/model-id` used only by `llm-judge`. The server controls this value and the UI displays it to learners. When omitted, the generation model is reused for backward compatibility.
+- `features.promptTemplating` (optional) — enables reusable named blanks, shared examples, and a filled-in prompt preview. Missing configuration keeps the current Course 1 UI and `{{input}}` behavior unchanged.
 - `maxConcurrency` (optional) — max in-flight LLM calls during an evaluation (default `4`, range 1–50). Set to `1` for serial.
 - `defaults` (optional) — `runs` sets the initial run count while `minRuns`, `maxRuns`, `minCases`, and `maxCases` set the editable limits (each 1–5)
 - `initialSession` (optional) — `promptA`, `promptB`, and `cases` (`input` / `expectedAnswer`)
@@ -58,6 +59,44 @@ For example, a later course can enable every validation type without changing Co
 ```
 
 `regex-match` treats Expected Answer as a regular expression. `valid-json` is a deterministic function checker and does not require an expected answer. `llm-judge` makes a second call to `llmJudgeModel` for each generated output and requires an expected answer. Function checkers are registered in code and enabled by ID; configuration never executes arbitrary JavaScript.
+
+### Config-gated prompt templating
+
+Later-course tasks can let the prompt template define the fields shown in every case without changing Course 1:
+
+```json
+{
+  "allowCompare": false,
+  "features": {
+    "promptTemplating": {
+      "enabled": true,
+      "templateEditable": true,
+      "showPreview": true,
+      "dynamicFields": true,
+      "fields": [
+        { "name": "context", "label": "Context" },
+        { "name": "input", "label": "Input" },
+        { "name": "constraint", "label": "Constraint" }
+      ]
+    }
+  },
+  "initialSession": {
+    "promptA": "Use the context to answer the input.\n\nContext:\n{{context}}\n\nInput:\n{{input}}\n\nConstraint:\n{{constraint}}",
+    "cases": [
+      {
+        "input": "",
+        "expectedAnswer": "",
+        "variables": {
+          "context": "",
+          "constraint": ""
+        }
+      }
+    ]
+  }
+}
+```
+
+With `dynamicFields`, placeholders such as `{{context}}`, `{{input}}`, and `{{constraint}}` automatically become labeled fields in each case. Learners edit the template as normal text, while placeholder values can differ across cases. Text written directly in the template stays shared. Expected output is used only for scoring, and each case can show its exact rendered prompt.
 
 Work-in-progress (prompts, cases, settings, and the last results) is stored in `eval-session.json`. That file is local and not checked in. A saved session wins over `initialSession` on reload.
 

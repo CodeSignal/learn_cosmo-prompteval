@@ -174,6 +174,7 @@ async function sessionLimitsFromConfig() {
   return {
     ...config.defaults,
     allowedMetricIds: config.allowedMetricIds,
+    promptTemplating: config.features.promptTemplating,
   };
 }
 
@@ -216,6 +217,7 @@ app.post('/api/eval/compare', async (req, res) => {
     runs,
     expectedAnswer,
     metricId,
+    examples,
   } = req.body ?? {};
 
   if (typeof promptA !== 'string') {
@@ -293,6 +295,10 @@ app.post('/api/eval/compare', async (req, res) => {
             : []),
         ],
         cases: Array.isArray(cases) ? cases : undefined,
+        examples: config.features.promptTemplating.allowExamples && Array.isArray(examples)
+          ? examples
+          : [],
+        promptTemplating: config.features.promptTemplating,
         input: typeof input === 'string' ? input : '',
         expectedAnswer: typeof expectedAnswer === 'string' ? expectedAnswer : '',
         metricId: typeof metricId === 'string' && metricId ? metricId : DEFAULT_METRIC_ID,
@@ -328,6 +334,8 @@ app.post('/api/eval/compare', async (req, res) => {
       || err?.code === 'INVALID_PROMPT'
       || err?.code === 'INVALID_CASE'
       || err?.code === 'TOO_MANY_CASES'
+      || err?.code === 'EXAMPLES_PLACEHOLDER_REQUIRED'
+      || err?.code === 'UNRESOLVED_PLACEHOLDER'
     ) {
       if (!res.headersSent) {
         return res.status(400).json({ error: err.message });

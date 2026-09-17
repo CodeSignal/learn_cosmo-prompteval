@@ -39,6 +39,40 @@
       <section class="eval-panel box card non-interactive" aria-labelledby="setupHeading">
         <h2 class="heading-xsmall" id="setupHeading">Prompt</h2>
 
+        <div class="eval-prompt-builder" id="promptBuilder" hidden>
+          <article class="eval-component-card">
+            <div class="eval-component-card__header">
+              <div>
+                <h3 class="body-xsmall eval-component-card__title">Instruction</h3>
+                <p class="body-xxsmall eval-component-card__hint">What should the model do?</p>
+              </div>
+              <span class="tag neutral">Required</span>
+            </div>
+            <textarea
+              class="input"
+              id="instructionInput"
+              rows="3"
+              placeholder="Describe the task clearly…"
+              spellcheck="false"
+            ></textarea>
+          </article>
+
+          <div class="eval-builder-components" id="builderComponents"></div>
+
+          <div class="eval-add-components" id="addComponents">
+            <p class="body-xxsmall eval-add-components__label">Add to your prompt</p>
+            <div class="eval-add-components__buttons" id="addComponentButtons"></div>
+          </div>
+        </div>
+
+        <div class="eval-strict-template" id="strictTemplateEditor" hidden>
+          <div class="eval-strict-template__surface" id="strictTemplateParts"></div>
+          <div class="eval-add-components" id="strictTemplateAdd">
+            <p class="body-xxsmall eval-add-components__label">Add field</p>
+            <div class="eval-add-components__buttons" id="strictTemplateAddButtons"></div>
+          </div>
+        </div>
+
         <div class="eval-prompt-grid eval-prompt-grid--single" id="promptGrid">
           <label class="eval-field">
             <span class="body-xsmall eval-field__label" id="promptALabel">Prompt</span>
@@ -53,7 +87,7 @@
 
           <div class="eval-prompt-b" id="promptBWrap" hidden>
             <label class="eval-field">
-              <span class="body-xsmall eval-field__label">Prompt B</span>
+              <span class="body-xsmall eval-field__label" id="promptBLabel">Prompt B</span>
               <textarea
                 class="input"
                 id="promptB"
@@ -63,6 +97,49 @@
               ></textarea>
             </label>
           </div>
+        </div>
+
+        <div class="eval-template-tools" id="templateTools" hidden>
+          <details class="eval-details" id="examplesDetails" hidden>
+            <summary class="eval-details__summary">
+              <span class="body-xsmall eval-details__summary-title">Examples <span class="eval-optional">(optional)</span></span>
+              <span class="body-xxsmall eval-details__summary-meta" id="examplesSummaryMeta">0 examples</span>
+            </summary>
+            <div class="eval-details__body">
+              <p class="body-xxsmall eval-details__hint" id="examplesHint">
+                Add sample inputs and ideal outputs, then place them in the prompt with <code>{{examples}}</code>.
+              </p>
+              <div class="eval-examples" id="examplesList"></div>
+              <div class="eval-inline-actions">
+                <button type="button" class="button button-secondary" id="addExampleBtn">Add example</button>
+                <button type="button" class="button button-tertiary" id="removeExamplesComponentBtn" hidden>Remove examples section</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="eval-details" id="templatePreviewDetails">
+            <summary class="eval-details__summary">
+              <span class="body-xsmall eval-details__summary-title">Rendered prompt</span>
+              <span class="body-xxsmall eval-details__summary-meta">Exact text sent to the model</span>
+            </summary>
+            <div class="eval-details__body">
+              <div class="eval-preview-controls">
+                <label class="eval-field" id="previewPromptWrap" hidden>
+                  <span class="body-xxsmall eval-field__label">Prompt</span>
+                  <select class="input" id="previewPromptSelect">
+                    <option value="A">Prompt A</option>
+                    <option value="B">Prompt B</option>
+                  </select>
+                </label>
+                <label class="eval-field">
+                  <span class="body-xxsmall eval-field__label">Input</span>
+                  <select class="input" id="previewCaseSelect"></select>
+                </label>
+              </div>
+              <p class="body-xxsmall eval-preview-warning" id="previewWarning" hidden></p>
+              <pre class="eval-template-preview body-small" id="templatePreview"></pre>
+            </div>
+          </details>
         </div>
 
         <div class="eval-compare-toggle" id="compareToggleRow" hidden>
@@ -168,11 +245,11 @@
 
         <details class="eval-details" id="casesDetails" open>
           <summary class="eval-details__summary">
-            <span class="body-xsmall eval-details__summary-title">Test cases</span>
+            <span class="body-xsmall eval-details__summary-title" id="casesHeading">Test cases</span>
             <span class="body-xxsmall eval-details__summary-meta" id="casesSummaryMeta">0 cases</span>
           </summary>
           <div class="eval-details__body">
-            <p class="body-xxsmall eval-details__hint">
+            <p class="body-xxsmall eval-details__hint" id="casesHint">
               Each case has a question (appended under the prompt) and an optional expected answer for scoring.
             </p>
             <div class="eval-cases" id="casesList"></div>
@@ -221,7 +298,7 @@
 
           <details class="eval-details" id="caseDetailsPanel">
             <summary class="eval-details__summary">
-              <span class="body-xsmall eval-details__summary-title">Case details</span>
+              <span class="body-xsmall eval-details__summary-title" id="caseDetailsTitle">Case details</span>
               <span class="body-xxsmall eval-details__summary-meta">Open to inspect consistency across runs</span>
             </summary>
             <div class="eval-details__body">

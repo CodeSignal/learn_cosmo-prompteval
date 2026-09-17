@@ -96,6 +96,43 @@ describe('buildEvalReportMarkdown', () => {
     expect(md).toContain('| Judge model | anthropic/claude-sonnet-4-6 |');
   });
 
+  it('records template examples, case variables, and the filled-in prompt', () => {
+    const md = buildEvalReportMarkdown({
+      model: 'anthropic/test-model',
+      provider: 'anthropic',
+      promptA: 'You are a {{role}}.\n{{examples}}\n{{input}}',
+      result: {
+        conditions: { metricId: 'exact-match', runs: 1, caseCount: 1 },
+        templateContext: {
+          examples: [{ input: 'Hello', idealOutput: 'Hi' }],
+        },
+        comparison: { outcome: 'unscored', winnerId: null, means: { A: 1 } },
+        prompts: [{ id: 'A', label: 'Prompt', aggregate: { mean: 1 } }],
+        cases: [{
+          id: 'case-1',
+          label: 'Case 1',
+          input: 'Thanks',
+          expectedAnswer: 'Welcome',
+          variables: { role: 'support agent' },
+          comparison: { outcome: 'unscored', winnerId: null, means: { A: 1 } },
+          prompts: [{
+            id: 'A',
+            label: 'Prompt',
+            renderedPrompt: 'You are a support agent.\nExample 1\nInput: Hello\nIdeal output: Hi\nThanks',
+            aggregate: { mean: 1 },
+            results: [],
+          }],
+        }],
+      },
+    });
+
+    expect(md).toContain('## Shared examples');
+    expect(md).toContain('- **Ideal output:** Hi');
+    expect(md).toContain('- **role:** support agent');
+    expect(md).toContain('Filled-in prompt:');
+    expect(md).toContain('You are a support agent.');
+  });
+
   it('keeps each completed evaluation in numbered history sections', () => {
     const first = '# Prompt Evaluation Report\n\nGenerated: first\n\n## Setup\n\nFirst setup\n';
     const second = '# Prompt Evaluation Report\n\nGenerated: second\n\n## Setup\n\nSecond setup\n';
