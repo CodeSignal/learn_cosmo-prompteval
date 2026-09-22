@@ -842,13 +842,9 @@ function updateTemplatePreview() {
       : PROMPT_TEMPLATING.variableNames),
   ]);
   const unknown = placeholders.filter((name) => !known.has(name));
-  const missingExamplesSlot = examples.length > 0 && !template.includes(EXAMPLES_PLACEHOLDER);
   const warnings = [
     ...(unknown.length > 0
       ? [`Missing case values for ${unknown.map((name) => `{{${name}}}`).join(', ')}.`]
-      : []),
-    ...(missingExamplesSlot && !isBuilderMode()
-      ? ['Add {{examples}} to the prompt to include the shared examples.']
       : []),
   ];
   previewWarning.textContent = warnings.join(' ');

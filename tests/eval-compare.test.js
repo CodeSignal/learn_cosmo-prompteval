@@ -248,6 +248,31 @@ describe('runPromptComparison', () => {
     );
   });
 
+  it('allows shared examples only in Prompt B during compare', async () => {
+    const runBatch = vi.fn()
+      .mockResolvedValueOnce(mockBatch({ renderedPrompt: 'A', mean: 1, output: 'ok', score: 1 }))
+      .mockResolvedValueOnce(mockBatch({ renderedPrompt: 'B', mean: 1, output: 'ok', score: 1 }));
+
+    await expect(runPromptComparison(
+      { llm: { complete: vi.fn() } },
+      {
+        prompts: [
+          { id: 'A', promptTemplate: 'Ticket:\n{{input}}' },
+          { id: 'B', promptTemplate: 'Examples:\n{{examples}}\n\nTicket:\n{{input}}' },
+        ],
+        cases: [{ input: 'Urgent but has workaround', expectedAnswer: 'ok' }],
+        examples: [{ input: 'Checkout down', idealOutput: 'High' }],
+        promptTemplating: { enabled: true, allowExamples: true },
+        runs: 1,
+        runBatch,
+      },
+    )).resolves.toMatchObject({
+      prompts: [{ id: 'A' }, { id: 'B' }],
+    });
+
+    expect(runBatch).toHaveBeenCalledTimes(2);
+  });
+
   it('shares maxConcurrency across prompt/case runs', async () => {
     let started = 0;
     let release = () => {};
