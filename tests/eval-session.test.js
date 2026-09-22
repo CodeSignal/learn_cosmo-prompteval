@@ -156,6 +156,29 @@ describe('normalizeEvalSession', () => {
       constraint: 'Be brief',
     });
   });
+
+  it('keeps freeform {{examples}} variables when allowExamples is off', () => {
+    const result = normalizeEvalSession({
+      promptA: 'Ticket:\n{{input}}',
+      promptB: 'Examples:\n{{examples}}\n\nTicket:\n{{input}}',
+      cases: [{
+        input: 'Urgent',
+        variables: { examples: '"down" → High' },
+      }],
+    }, {
+      promptTemplating: {
+        enabled: true,
+        dynamicFields: true,
+        allowExamples: false,
+        variableNames: [],
+      },
+    });
+
+    expect(result.cases[0].variables).toEqual({
+      examples: '"down" → High',
+    });
+    expect(result).not.toHaveProperty('examples');
+  });
 });
 
 const completeResult = {

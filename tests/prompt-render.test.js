@@ -70,5 +70,20 @@ describe('renderPromptTemplate', () => {
       strict: true,
     })).toBe('Question: Hello');
   });
+
+  it('keeps freeform case variable examples when no shared examples are provided', () => {
+    expect(renderPromptTemplate('Examples:\n{{examples}}\n\nQ: {{input}}', 'Hello', {
+      variables: { examples: '"down" → High' },
+      strict: true,
+    })).toBe('Examples:\n"down" → High\n\nQ: Hello');
+  });
+
+  it('lets shared examples override a freeform examples variable', () => {
+    expect(renderPromptTemplate('Examples:\n{{examples}}\n\nQ: {{input}}', 'Hello', {
+      variables: { examples: 'ignored' },
+      examples: [{ input: 'a', idealOutput: 'A' }],
+      strict: true,
+    })).toContain('Example 1\nInput: a\nIdeal output: A');
+  });
 });
 

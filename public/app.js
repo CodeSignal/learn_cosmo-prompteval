@@ -138,9 +138,12 @@ function activeTemplateFields() {
   if (!PROMPT_TEMPLATING.dynamicFields) return PROMPT_TEMPLATING.fields;
   const templates = [promptAEl.value, ...(session.compareMode ? [promptBEl.value] : [])];
   const names = [...new Set(templates.flatMap(findPromptPlaceholders))]
-    .filter((name) => (
-      !['examples', '__proto__', 'prototype', 'constructor'].includes(name)
-    ));
+    .filter((name) => {
+      if (['__proto__', 'prototype', 'constructor'].includes(name)) return false;
+      // Shared examples UI owns {{examples}}; otherwise treat it as a case field.
+      if (name === 'examples' && PROMPT_TEMPLATING.allowExamples) return false;
+      return true;
+    });
   return names.map((name) => {
     const configured = PROMPT_TEMPLATING.fields.find((field) => field.name === name);
     return configured ?? {
