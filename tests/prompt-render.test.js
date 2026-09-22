@@ -64,10 +64,11 @@ describe('renderPromptTemplate', () => {
     })).toThrow(/Missing values for: \{\{role\}\}/);
   });
 
-  it('requires an examples placeholder when examples are present', () => {
-    expect(() => renderPromptTemplate('Question: {{input}}', 'Hello', {
+  it('omits shared examples when the template has no {{examples}} slot', () => {
+    expect(renderPromptTemplate('Question: {{input}}', 'Hello', {
       examples: [{ input: 'a', idealOutput: 'A' }],
       strict: true,
-    })).toThrow(/Add \{\{examples\}\}/);
+    })).toBe('Question: Hello');
   });
 });
+
