@@ -391,6 +391,13 @@ code {
   color: var(--Colors-Text-Body-Light);
 }
 
+.eval-field__usage {
+  margin-left: 6px;
+  font-size: 0.6875rem;
+  font-weight: 400;
+  color: var(--Colors-Text-Body-Light);
+}
+
 .eval-controls-row {
   display: flex;
   flex-wrap: wrap;
@@ -743,6 +750,12 @@ select.input {
   color: var(--Colors-Text-Body-Light);
 }
 
+.eval-case-prompt-preview__prompt-label {
+  margin: var(--UI-Spacing-spacing-s, 12px) 0 4px;
+  font-weight: 600;
+  color: var(--Colors-Text-Body-Medium);
+}
+
 .eval-case-prompt-preview .eval-template-preview {
   min-height: 6rem;
   max-height: 16rem;
@@ -752,6 +765,10 @@ select.input {
   background: var(--Colors-Backgrounds-Main-Default, #fff);
   font-size: 0.9375rem;
   line-height: 1.5;
+}
+
+.eval-case-prompt-preview .eval-case-prompt-preview__prompt-label + .eval-template-preview {
+  margin-top: 0;
 }
 
 @media (max-width: 600px) {
