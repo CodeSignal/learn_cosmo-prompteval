@@ -151,6 +151,16 @@ function activeTemplateFields() {
   });
 }
 
+function fieldPromptUsageNote(fieldName) {
+  if (!session.compareMode || !PROMPT_TEMPLATING.dynamicFields) return '';
+  const inA = findPromptPlaceholders(promptAEl.value).includes(fieldName);
+  const inB = findPromptPlaceholders(promptBEl.value).includes(fieldName);
+  if (inA && inB) return '';
+  if (inA) return 'A only';
+  if (inB) return 'B only';
+  return '';
+}
+
 function parseTemplateParts(template) {
   const parts = [];
   const source = String(template ?? '');
@@ -637,9 +647,15 @@ function renderCases() {
               const value = field.name === 'input'
                 ? c.input
                 : (c.variables?.[field.name] ?? '');
+              const usageNote = fieldPromptUsageNote(field.name);
               return `
               <label class="eval-field">
-                <span class="body-xxsmall eval-field__label">${escapeHtml(field.label)}</span>
+                <span class="body-xxsmall eval-field__label">
+                  ${escapeHtml(field.label)}
+                  ${usageNote
+                    ? `<span class="eval-field__usage">${escapeHtml(usageNote)}</span>`
+                    : ''}
+                </span>
                 <textarea
                   class="input"
                   ${field.name === 'input'
@@ -674,7 +690,23 @@ function renderCases() {
         : '';
       const previewOpen = !hadPreviews || openPreviews.has(c.id);
       const casePreviewHtml = PROMPT_TEMPLATING.dynamicFields && PROMPT_TEMPLATING.showPreview
-        ? `
+        ? (
+          session.compareMode
+            ? `
+          <details class="eval-case-prompt-preview"${previewOpen ? ' open' : ''}>
+            <summary class="eval-case-prompt-preview__summary">
+              <span class="eval-case-prompt-preview__heading">
+                <span class="body-xsmall eval-case-prompt-preview__title">Full prompts for this case</span>
+                <span class="body-xxsmall eval-case-prompt-preview__hint">Exact text sent for Prompt A and Prompt B</span>
+              </span>
+            </summary>
+            <p class="body-xxsmall eval-case-prompt-preview__prompt-label">Prompt A</p>
+            <pre class="eval-template-preview body-small" data-case-prompt-preview="A"></pre>
+            <p class="body-xxsmall eval-case-prompt-preview__prompt-label">Prompt B</p>
+            <pre class="eval-template-preview body-small" data-case-prompt-preview="B"></pre>
+          </details>
+        `
+            : `
           <details class="eval-case-prompt-preview"${previewOpen ? ' open' : ''}>
             <summary class="eval-case-prompt-preview__summary">
               <span class="eval-case-prompt-preview__heading">
@@ -682,9 +714,10 @@ function renderCases() {
                 <span class="body-xxsmall eval-case-prompt-preview__hint">Exact text sent to the model</span>
               </span>
             </summary>
-            <pre class="eval-template-preview body-small" data-case-prompt-preview></pre>
+            <pre class="eval-template-preview body-small" data-case-prompt-preview="A"></pre>
           </details>
         `
+        )
         : '';
       return `
       <article class="eval-case" data-case-id="${escapeHtml(c.id)}">
@@ -830,13 +863,23 @@ function updateInlineCasePreviews() {
   if (!PROMPT_TEMPLATING.dynamicFields || !PROMPT_TEMPLATING.showPreview) return;
   const examples = PROMPT_TEMPLATING.allowExamples ? (session.examples ?? []) : [];
   [...casesListEl.querySelectorAll('.eval-case')].forEach((card, index) => {
-    const preview = card.querySelector('[data-case-prompt-preview]');
+    const previewA = card.querySelector('[data-case-prompt-preview="A"]')
+      ?? card.querySelector('[data-case-prompt-preview]');
+    const previewB = card.querySelector('[data-case-prompt-preview="B"]');
     const testCase = session.cases[index];
-    if (!preview || !testCase) return;
-    preview.textContent = renderPromptTemplate(promptAEl.value, testCase.input, {
-      variables: testCase.variables,
-      examples,
-    }) || '(empty prompt)';
+    if (!testCase) return;
+    if (previewA) {
+      previewA.textContent = renderPromptTemplate(promptAEl.value, testCase.input, {
+        variables: testCase.variables,
+        examples,
+      }) || '(empty prompt)';
+    }
+    if (previewB) {
+      previewB.textContent = renderPromptTemplate(promptBEl.value, testCase.input, {
+        variables: testCase.variables,
+        examples,
+      }) || '(empty prompt)';
+    }
   });
 }
 
@@ -1430,14 +1473,18 @@ async function init() {
 
 enableCompareBtn.addEventListener('click', () => {
   if (!ALLOW_COMPARE) return;
+  syncCasesFromDom();
   session.compareMode = true;
   syncCompareModeUi();
+  if (PROMPT_TEMPLATING.dynamicFields) renderCases();
   persistSessionNow();
 });
 
 disableCompareBtn.addEventListener('click', () => {
+  syncCasesFromDom();
   session.compareMode = false;
   syncCompareModeUi();
+  if (PROMPT_TEMPLATING.dynamicFields) renderCases();
   persistSessionNow();
 });
 
