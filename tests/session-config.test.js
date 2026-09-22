@@ -325,6 +325,31 @@ describe('normalizePromptTemplating', () => {
       constraint: 'Be brief',
     });
   });
+
+  it('keeps freeform {{examples}} as a case variable when allowExamples is off', () => {
+    const result = normalizeSessionConfig({
+      features: {
+        promptTemplating: {
+          enabled: true,
+          dynamicFields: true,
+        },
+      },
+      initialSession: {
+        promptA: 'Ticket:\n{{input}}',
+        promptB: 'Examples:\n{{examples}}\n\nTicket:\n{{input}}',
+        cases: [{
+          input: 'Urgent but has workaround',
+          variables: { examples: '"down" → High' },
+        }],
+      },
+    });
+
+    expect(result.features.promptTemplating.allowExamples).toBe(false);
+    expect(result.initialSession.cases[0].variables).toEqual({
+      examples: '"down" → High',
+    });
+    expect(result.initialSession).not.toHaveProperty('examples');
+  });
 });
 
 describe('normalizeAllowedModels', () => {

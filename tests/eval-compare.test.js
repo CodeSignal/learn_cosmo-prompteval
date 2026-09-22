@@ -273,6 +273,38 @@ describe('runPromptComparison', () => {
     expect(runBatch).toHaveBeenCalledTimes(2);
   });
 
+  it('passes freeform case examples into Prompt B when allowExamples is off', async () => {
+    const runBatch = vi.fn()
+      .mockResolvedValueOnce(mockBatch({ renderedPrompt: 'A', mean: 1, output: 'ok', score: 1 }))
+      .mockResolvedValueOnce(mockBatch({ renderedPrompt: 'B', mean: 1, output: 'ok', score: 1 }));
+
+    await runPromptComparison(
+      { llm: { complete: vi.fn() } },
+      {
+        prompts: [
+          { id: 'A', promptTemplate: 'Ticket:\n{{input}}' },
+          { id: 'B', promptTemplate: 'Examples:\n{{examples}}\n\nTicket:\n{{input}}' },
+        ],
+        cases: [{
+          input: 'Urgent but has workaround',
+          expectedAnswer: 'ok',
+          variables: { examples: '"down" → High' },
+        }],
+        promptTemplating: { enabled: true, allowExamples: false, dynamicFields: true },
+        runs: 1,
+        runBatch,
+      },
+    );
+
+    expect(runBatch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        templateVariables: { examples: '"down" → High' },
+      }),
+    );
+  });
+
   it('shares maxConcurrency across prompt/case runs', async () => {
     let started = 0;
     let release = () => {};
