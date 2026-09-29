@@ -689,8 +689,72 @@ select.input {
 }
 
 .eval-case__title {
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   font-weight: 600;
+}
+
+.eval-case__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--UI-Spacing-spacing-s, 12px);
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.eval-case__toggle::before {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  border-right: 1.5px solid var(--Colors-Text-Body-Light);
+  border-bottom: 1.5px solid var(--Colors-Text-Body-Light);
+  transform: rotate(45deg);
+  flex-shrink: 0;
+  transition: transform 120ms ease;
+}
+
+.eval-case--collapsed .eval-case__toggle::before {
+  transform: rotate(-45deg);
+}
+
+.eval-case__snippet {
+  display: none;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: var(--Colors-Text-Body-Light);
+}
+
+.eval-case--collapsed .eval-case__snippet {
+  display: block;
+}
+
+.eval-case__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-s, 12px);
+}
+
+.eval-case__body[hidden] {
+  display: none;
+}
+
+.eval-cases__toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.eval-cases__toolbar:has(> [hidden]) {
+  display: none;
 }
 
 .eval-case__variables {

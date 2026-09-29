@@ -57,6 +57,8 @@ const casesSummaryMeta = document.getElementById('casesSummaryMeta');
 const casesHeading = document.getElementById('casesHeading');
 const casesHint = document.getElementById('casesHint');
 const addCaseBtn = document.getElementById('addCaseBtn');
+const toggleAllCasesBtn = document.getElementById('toggleAllCasesBtn');
+const collapsedCaseIds = new Set();
 const metricSelectEl = document.getElementById('metricSelect');
 const llmJudgeHelp = document.getElementById('llmJudgeHelp');
 const llmJudgeHelpNote = document.getElementById('llmJudgeHelpNote');
@@ -355,6 +357,7 @@ function setBusy(busy) {
   runCountEl.readOnly = busy;
   casesListEl.querySelectorAll('textarea, button').forEach((el) => {
     if (el.tagName === 'TEXTAREA') el.readOnly = busy;
+    else if (el.classList.contains('eval-case__toggle')) el.disabled = false;
     else {
       el.disabled = busy
         || (el.classList.contains('eval-case__remove') && session.cases.length <= MIN_CASES);
@@ -634,6 +637,33 @@ function syncCasesFromDom() {
   updateCasesSummary();
 }
 
+function caseSnippet(testCase) {
+  const text = [testCase.input, ...Object.values(testCase.variables ?? {})]
+    .map((value) => String(value ?? '').trim())
+    .find(Boolean);
+  if (!text) return 'Empty';
+  const firstLine = text.split('\n')[0];
+  return firstLine.length > 60 ? `${firstLine.slice(0, 60)}…` : firstLine;
+}
+
+function setCaseCollapsed(card, collapsed) {
+  const id = card.dataset.caseId;
+  if (collapsed) collapsedCaseIds.add(id);
+  else collapsedCaseIds.delete(id);
+  card.classList.toggle('eval-case--collapsed', collapsed);
+  card.querySelector('.eval-case__body').hidden = collapsed;
+  card.querySelector('.eval-case__toggle').setAttribute('aria-expanded', String(!collapsed));
+  const testCase = session.cases.find((c) => c.id === id);
+  if (testCase) card.querySelector('.eval-case__snippet').textContent = caseSnippet(testCase);
+}
+
+function updateToggleAllCasesBtn() {
+  const allCollapsed = session.cases.length > 0
+    && session.cases.every((c) => collapsedCaseIds.has(c.id));
+  toggleAllCasesBtn.textContent = allCollapsed ? 'Expand all' : 'Collapse all';
+  toggleAllCasesBtn.hidden = session.cases.length < 2;
+}
+
 function renderCases() {
   const openPreviews = new Set(
     [...casesListEl.querySelectorAll('.eval-case-prompt-preview[open]')]
@@ -722,10 +752,21 @@ function renderCases() {
         `
         )
         : '';
+      const collapsed = collapsedCaseIds.has(c.id);
       return `
-      <article class="eval-case" data-case-id="${escapeHtml(c.id)}">
+      <article class="eval-case${collapsed ? ' eval-case--collapsed' : ''}" data-case-id="${escapeHtml(c.id)}">
         <div class="eval-case__header">
-          <h4 class="body-xsmall eval-case__title">${isBuilderMode() ? `Input ${index + 1}` : `Case ${index + 1}`}</h4>
+          <h4 class="body-xsmall eval-case__title">
+            <button
+              type="button"
+              class="eval-case__toggle"
+              data-toggle-case="${escapeHtml(c.id)}"
+              aria-expanded="${collapsed ? 'false' : 'true'}"
+            >
+              <span>${isBuilderMode() ? `Input ${index + 1}` : `Case ${index + 1}`}</span>
+              <span class="body-xxsmall eval-case__snippet">${escapeHtml(caseSnippet(c))}</span>
+            </button>
+          </h4>
           <button
             type="button"
             class="button button-tertiary eval-case__remove"
@@ -733,15 +774,18 @@ function renderCases() {
             ${session.cases.length <= MIN_CASES ? 'disabled' : ''}
           >Remove</button>
         </div>
-        ${legacyInputHtml}
-        ${templateFieldsHtml}
-        ${casePreviewHtml}
-        ${expectedHtml}
+        <div class="eval-case__body"${collapsed ? ' hidden' : ''}>
+          ${legacyInputHtml}
+          ${templateFieldsHtml}
+          ${casePreviewHtml}
+          ${expectedHtml}
+        </div>
       </article>
     `;
     })
     .join('');
 
+  updateToggleAllCasesBtn();
   addCaseBtn.disabled = session.cases.length >= maxVisibleInputs();
   updateCasesSummary();
   updateTemplatePreview();
@@ -1552,12 +1596,28 @@ addCaseBtn.addEventListener('click', () => {
   persistSessionNow();
 });
 
+toggleAllCasesBtn.addEventListener('click', () => {
+  syncCasesFromDom();
+  const collapse = !session.cases.every((c) => collapsedCaseIds.has(c.id));
+  casesListEl.querySelectorAll('.eval-case').forEach((card) => setCaseCollapsed(card, collapse));
+  updateToggleAllCasesBtn();
+});
+
 casesListEl.addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-toggle-case]');
+  if (toggle) {
+    syncCasesFromDom();
+    const card = toggle.closest('.eval-case');
+    setCaseCollapsed(card, !card.classList.contains('eval-case--collapsed'));
+    updateToggleAllCasesBtn();
+    return;
+  }
   const btn = event.target.closest('[data-remove]');
   if (!btn) return;
   syncCasesFromDom();
   if (session.cases.length <= MIN_CASES) return;
   session.cases = session.cases.filter((c) => c.id !== btn.getAttribute('data-remove'));
+  collapsedCaseIds.delete(btn.getAttribute('data-remove'));
   renderCases();
   persistSessionNow();
 });
