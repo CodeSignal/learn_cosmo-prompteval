@@ -979,20 +979,33 @@ function renderVerdict(data) {
   `;
 }
 
-function renderRunBars(scores, titlePrefix = 'Run') {
-  return scores
-    .map((score, i) => {
-      const clamped = Math.min(1, Math.max(0, score));
-      const height = Math.max(4, Math.round(clamped * 44));
-      const label = formatScore(score);
-      return `
-        <div class="eval-dist__col" title="${escapeHtml(titlePrefix)} ${i + 1}: ${label}">
-          <div class="eval-dist__bar" style="height: ${height}px"></div>
-          <span class="body-xxsmall eval-dist__count">${i + 1}</span>
-        </div>
-      `;
-    })
-    .join('');
+function renderScoreCell(label) {
+  if (label === null) return '<td class="eval-dist__score">—</td>';
+  const tone = label === '0.00' ? 'fail' : label === '1.00' ? 'pass' : 'partial';
+  return `<td class="eval-dist__score eval-dist__score--${tone}">${label}</td>`;
+}
+
+function renderScoreTable(groups) {
+  const runCount = Math.max(...groups.map((g) => g.scores.length));
+  const runs = Array.from({ length: runCount }, (_, i) => i);
+  return `
+    <table class="eval-dist__table">
+      <thead>
+        <tr>
+          <th></th>
+          ${runs.map((i) => `<th scope="col" class="body-xxsmall">Run ${i + 1}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${groups.map((group) => `
+          <tr>
+            <th scope="row" class="body-xxsmall">${escapeHtml(group.caseLabel)}</th>
+            ${runs.map((i) => renderScoreCell(formatScore(group.scores[i]))).join('')}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
 }
 
 function renderDistribution(groups) {
@@ -1008,27 +1021,10 @@ function renderDistribution(groups) {
   const perfectCount = allScores.filter((s) => s === 1).length;
   const multiCase = groups.length > 1;
 
-  const body = multiCase
-    ? groups.map((group) => `
-        <div class="eval-dist__group">
-          <p class="body-xxsmall eval-dist__group-label">${escapeHtml(group.caseLabel)}</p>
-          <div class="eval-dist__bars" style="--dist-count: ${group.scores.length}">
-            ${renderRunBars(group.scores, group.caseLabel)}
-          </div>
-        </div>
-      `).join('')
-    : `
-        <div class="eval-dist__bars" style="--dist-count: ${allScores.length}">
-          ${renderRunBars(allScores)}
-        </div>
-      `;
-
   return `
     <div class="eval-dist" aria-label="Scores by run${multiCase ? ' and case' : ''}">
-      <p class="body-xxsmall eval-dist__heading">
-        ${multiCase ? 'Each bar is one run, grouped by case' : 'Each bar is one run'}
-      </p>
-      ${body}
+      <p class="body-xxsmall eval-dist__heading">Score for each run, by case</p>
+      ${renderScoreTable(groups)}
       <p class="body-xxsmall eval-dist__caption">
         ${perfectCount} of ${allScores.length} perfect (score 1)
         ${multiCase ? ` · ${groups.length} cases` : ''}

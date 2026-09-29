@@ -836,13 +836,6 @@ select.input {
     border-left: 1px solid var(--Colors-Stroke-Light, var(--Colors-Stroke-Default));
   }
 
-  .eval-summary-card:only-child .eval-dist__bar {
-    max-width: 40px;
-  }
-
-  .eval-summary-card:only-child .eval-dist__bars {
-    gap: 8px;
-  }
 }
 
 .eval-summary-card--winner {
@@ -904,59 +897,45 @@ select.input {
   text-align: left;
 }
 
-.eval-dist__group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  text-align: left;
-}
-
-.eval-dist__group + .eval-dist__group {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--Colors-Stroke-Light, var(--Colors-Stroke-Default));
-}
-
-.eval-dist__group-label {
-  margin: 0;
-  color: var(--Colors-Text-Body-Medium);
-  font-weight: 500;
-}
-
-.eval-dist__bars {
-  display: grid;
-  grid-template-columns: repeat(var(--dist-count, 5), minmax(0, 1fr));
-  gap: 4px;
-  align-items: end;
-  min-height: 52px;
-  padding: 0 2px;
-}
-
-.eval-dist__col {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 2px;
-  min-width: 0;
-}
-
-.eval-dist__bar {
+.eval-dist__table {
   width: 100%;
-  max-width: 20px;
-  border-radius: 3px 3px 0 0;
-  background: var(--Colors-Base-Accent-Blue-500, #3b82c4);
+  border-collapse: separate;
+  border-spacing: 4px;
 }
 
-.eval-summary-card--winner .eval-dist__bar {
-  background: var(--Colors-Base-Accent-Green-600, #198e59);
-}
-
-.eval-dist__count {
+.eval-dist__table th {
+  padding: 4px 8px;
   color: var(--Colors-Text-Body-Light);
+  font-weight: 500;
+  text-align: center;
+}
+
+.eval-dist__table th[scope="row"] {
+  color: var(--Colors-Text-Body-Medium);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.eval-dist__score {
+  padding: 4px 8px;
+  text-align: center;
+  font-size: 1.25rem;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: 1;
-  font-size: 0.65rem;
+  color: var(--Colors-Text-Body-Strong, var(--Colors-Text-Body-Medium));
+  border-radius: 6px;
+}
+
+.eval-dist__score--pass {
+  background: color-mix(in srgb, var(--Colors-Base-Accent-Green-500, #1ec173) 20%, transparent);
+}
+
+.eval-dist__score--partial {
+  background: color-mix(in srgb, var(--Colors-Base-Accent-Yellow-400, #ffc500) 25%, transparent);
+}
+
+.eval-dist__score--fail {
+  background: color-mix(in srgb, var(--Colors-Base-Accent-Red-400, #e6193f) 18%, transparent);
 }
 
 .eval-dist__caption {
