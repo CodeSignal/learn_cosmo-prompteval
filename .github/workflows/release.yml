@@ -1,7 +1,7 @@
 # Attach a deployable tarball to a GitHub release.
-# The archive includes node_modules, the design-system submodule, and the
-# built client (public/app.bundle.js) so a new environment can unpack,
-# add a local .env, and start with `node server.js`.
+# `npm run pack` builds a minified client + single-file server bundle (no
+# node_modules) into dist.tar.gz. Unpack, add a local .env (and optionally
+# session.config.json), then start with `node server.js`.
 
 name: Build and Release
 
@@ -32,22 +32,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build frontend bundle
-        run: npm run build
+      - name: Run tests
+        run: npm test
 
-      - name: Archive release package
-        run: |
-          tar -czf /tmp/dist.tar.gz \
-            --exclude='.git' \
-            --exclude='.github' \
-            --exclude='.env' \
-            --exclude='session.config.json' \
-            --exclude='eval-session.json' \
-            --exclude='chat-sessions.json' \
-            --exclude='chat-config.json' \
-            --exclude='public/app.js' \
-            .
-          mv /tmp/dist.tar.gz dist.tar.gz
+      - name: Pack release
+        run: npm run pack
 
       - name: Upload build artifact (for workflow logs)
         uses: actions/upload-artifact@v7
