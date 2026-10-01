@@ -10,6 +10,8 @@ session.config.json
 eval-session.json
 .codesignal/report.md
 .agent-build
+dist
+dist.tar.gz
 
 # Local course context for the agent only — do not commit
 Courses/

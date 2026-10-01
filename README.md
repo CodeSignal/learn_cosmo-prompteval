@@ -114,7 +114,14 @@ Open http://localhost:3000
 
 ```bash
 npm test
+npm run pack     # client + server bundles → dist/ and dist.tar.gz
 ```
+
+`.github/workflows/release.yml` runs tests, then `npm run pack`: a minified client
+bundle, a single-file server bundle (Express + LLM SDKs inlined — no
+`node_modules`), and the static files the server serves. Extract `dist.tar.gz`
+and run `node server.js`. Supply `session.config.json` and `.env` at runtime.
+
 
 ## Stack
 
