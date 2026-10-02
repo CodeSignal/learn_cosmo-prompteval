@@ -2,6 +2,11 @@
 # `npm run pack` builds a minified client + single-file server bundle (no
 # node_modules) into dist.tar.gz. Unpack, add a local .env (and optionally
 # session.config.json), then start with `node server.js`.
+#
+# Download URLs:
+#   Stable: .../releases/latest/download/dist.tar.gz
+#   Newest: .../releases/download/prerelease/dist.tar.gz
+#           (floating tag; updated on every versioned release, stable or RC)
 
 name: Build and Release
 
@@ -11,6 +16,14 @@ on:
 
 permissions:
   contents: write
+
+# Serialize release runs so floating-alias tag/notes/asset updates cannot
+# interleave. Queue pending runs instead of canceling them; a stale check
+# below still skips alias writes if queue order diverges from release order.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   build-and-release:
@@ -35,6 +48,19 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # Stamp package.json (and thus dist/package.json) with the release tag so
+      # the tarball version matches the GitHub release. Skip the floating
+      # `prerelease` alias tag — that is not a semver version.
+      - name: Set package version from release tag
+        if: github.event.release.tag_name != 'prerelease'
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG}"
+          version="${version#v}"
+          npm version "$version" --no-git-tag-version --allow-same-version
+
       - name: Pack release
         run: npm run pack
 
@@ -53,3 +79,58 @@ jobs:
           allowUpdates: true
           omitBodyDuringUpdate: true
           omitNameDuringUpdate: true
+          # Without this, the update path defaults prerelease=false and clears
+          # the flag you set in the GitHub UI, which then makes the release Latest.
+          omitPrereleaseDuringUpdate: true
+
+      # Every versioned release (stable or pre-release) also refreshes a floating
+      # `prerelease` tag + release so that channel always has the newest build —
+      # including when we ship straight to latest without an RC first.
+      # The floating release stays marked prerelease so it never steals /latest.
+      # Skip when the triggering tag is already `prerelease` to avoid a loop.
+      - name: Update floating prerelease alias
+        if: github.event.release.tag_name != 'prerelease'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_TAG: ${{ github.event.release.tag_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Releases API is newest-created first. Ignore the floating alias
+          # itself and drafts so we only compare versioned releases.
+          newest="$(gh api "repos/${GITHUB_REPOSITORY}/releases" \
+            --jq '[.[] | select(.draft == false and .tag_name != "prerelease")][0].tag_name // empty')"
+          if [[ -z "${newest}" ]]; then
+            echo "No versioned releases found; skipping floating alias update."
+            exit 0
+          fi
+          if [[ "${newest}" != "${SOURCE_TAG}" ]]; then
+            echo "Skipping floating alias update: ${SOURCE_TAG} is stale (newest is ${newest})."
+            exit 0
+          fi
+
+          git tag -f prerelease "${SOURCE_SHA}"
+          git push origin refs/tags/prerelease --force
+
+          notes="Floating alias for the newest build (stable or pre-release).
+
+          Currently points at \`${SOURCE_TAG}\` (\`${SOURCE_SHA}\`).
+
+          Stable latest: https://github.com/${{ github.repository }}/releases/latest/download/dist.tar.gz
+          Newest (incl. pre-release): https://github.com/${{ github.repository }}/releases/download/prerelease/dist.tar.gz"
+
+          if gh release view prerelease >/dev/null 2>&1; then
+            gh release edit prerelease \
+              --prerelease \
+              --target "${SOURCE_SHA}" \
+              --title "Latest pre-release" \
+              --notes "${notes}"
+            gh release upload prerelease dist.tar.gz --clobber
+          else
+            gh release create prerelease dist.tar.gz \
+              --prerelease \
+              --target "${SOURCE_SHA}" \
+              --title "Latest pre-release" \
+              --notes "${notes}"
+          fi
