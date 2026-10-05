@@ -1261,3 +1261,188 @@ select.input {
     padding: var(--UI-Spacing-spacing-s, 12px);
   }
 }
+
+/* ── Assessment mode ───────────────────────────────────────── */
+
+.eval-stage {
+  margin-left: auto;
+  align-self: center;
+}
+
+.eval-stage-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--UI-Spacing-spacing-xs, 8px);
+}
+
+.eval-materials {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-s, 12px);
+}
+
+.eval-material__body {
+  margin: 0;
+  word-break: break-word;
+  color: var(--Colors-Text-Body-Default);
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.eval-material__body p,
+.eval-material__body ul,
+.eval-material__body ol {
+  margin: 0 0 var(--UI-Spacing-spacing-xs, 8px);
+}
+
+.eval-material__body ul,
+.eval-material__body ol {
+  padding-left: var(--UI-Spacing-spacing-l, 24px);
+}
+
+.eval-material__sub {
+  margin-left: var(--UI-Spacing-spacing-m, 16px);
+}
+
+.eval-material__heading {
+  margin: var(--UI-Spacing-spacing-m, 16px) 0 var(--UI-Spacing-spacing-xs, 8px);
+  font-weight: 600;
+  color: var(--Colors-Text-Body-Strong, var(--Colors-Text-Body-Default));
+}
+
+.eval-material__code {
+  margin: 0 0 var(--UI-Spacing-spacing-xs, 8px);
+  padding: var(--UI-Spacing-spacing-xs, 8px) var(--UI-Spacing-spacing-s, 12px);
+  border-radius: var(--UI-Radius-radius-s);
+  background: var(--Colors-Backgrounds-Main-Medium, var(--Colors-Base-Neutral-20));
+  white-space: pre-wrap;
+}
+
+.eval-provided {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-s, 12px);
+}
+
+.eval-provided__title {
+  margin: 0;
+  font-weight: 600;
+  color: var(--Colors-Text-Body-Medium);
+}
+
+.eval-case--provided {
+  background: var(--Colors-Backgrounds-Main-Medium, var(--Colors-Base-Neutral-20));
+}
+
+.eval-case--excluded {
+  opacity: 0.55;
+}
+
+.eval-case__readonly {
+  margin: 0;
+  padding: var(--UI-Spacing-spacing-xs, 8px) var(--UI-Spacing-spacing-s, 12px);
+  border: 1px solid var(--Colors-Stroke-Light, var(--Colors-Stroke-Default));
+  border-radius: var(--UI-Radius-radius-s);
+  background: var(--Colors-Backgrounds-Main-Top, var(--Colors-Base-Neutral-00));
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  color: var(--Colors-Text-Body-Default);
+}
+
+.eval-case--provided .eval-case__title {
+  display: flex;
+  align-items: center;
+  gap: var(--UI-Spacing-spacing-xs, 8px);
+}
+
+.eval-include {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--Colors-Text-Body-Medium);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.eval-run-estimate {
+  margin: 0;
+  color: var(--Colors-Text-Body-Light);
+}
+
+.eval-run-estimate--over,
+.eval-counter--over,
+.eval-stability--warn,
+.eval-result__note--error,
+.eval-sample__note--error {
+  color: var(--Colors-Base-Accent-Red-700, #b8062c);
+}
+
+.eval-counter {
+  margin: 0;
+  text-align: right;
+  color: var(--Colors-Text-Body-Light);
+}
+
+.eval-samples {
+  display: flex;
+  flex-direction: column;
+  gap: var(--UI-Spacing-spacing-xs, 8px);
+}
+
+.eval-sample__summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--UI-Spacing-spacing-xs, 8px);
+}
+
+.eval-sample__verdicts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--Colors-Text-Body-Medium);
+}
+
+.eval-sample--disagree {
+  border-color: var(--Colors-Base-Accent-Red-400, #e6193f);
+}
+
+.eval-sample__note,
+.eval-result__note {
+  margin: 0;
+  color: var(--Colors-Text-Body-Medium);
+}
+
+.eval-agree {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.eval-agree--yes {
+  color: var(--Colors-Base-Accent-Green-700, #0f6b42);
+}
+
+.eval-agree--no {
+  color: var(--Colors-Base-Accent-Red-700, #b8062c);
+}
+
+.eval-stability {
+  margin: 0;
+  color: var(--Colors-Text-Body-Medium);
+}
+
+@media (max-width: 480px) {
+  .eval-include {
+    margin-left: 0;
+  }
+}
+
+.eval-verdict--error {
+  border-color: var(--Colors-Base-Accent-Red-400, #e6193f);
+  background: color-mix(in srgb, var(--Colors-Base-Accent-Red-400, #e6193f) 8%, transparent);
+}

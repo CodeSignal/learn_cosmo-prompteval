@@ -3,6 +3,7 @@ import { DEFAULT_CONCURRENCY } from '../lib/concurrency.js';
 import {
   DEFAULT_ALLOWED_MODELS,
   DEFAULT_ALLOWED_METRIC_IDS,
+  DEFAULT_ASSESSMENT,
   DEFAULT_MODEL_REF,
   DEFAULT_PROMPT_TEMPLATING,
   FALLBACK_DEFAULTS,
@@ -24,6 +25,7 @@ describe('normalizeSessionConfig', () => {
       allowCompare: false,
       maxConcurrency: DEFAULT_CONCURRENCY,
       features: { promptTemplating: { ...DEFAULT_PROMPT_TEMPLATING } },
+      assessment: DEFAULT_ASSESSMENT,
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
     });
@@ -36,6 +38,7 @@ describe('normalizeSessionConfig', () => {
       allowCompare: false,
       maxConcurrency: DEFAULT_CONCURRENCY,
       features: { promptTemplating: { ...DEFAULT_PROMPT_TEMPLATING } },
+      assessment: DEFAULT_ASSESSMENT,
       defaults: { ...FALLBACK_DEFAULTS },
       initialSession: { promptA: '', promptB: '', cases: [] },
     });

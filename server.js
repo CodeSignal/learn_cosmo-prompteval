@@ -4,10 +4,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { readJsonFile, writeJsonFileAtomic } from './lib/helpers.js';
 import { enqueueSessionsWrite } from './lib/sessions-file.js';
-import { MAX_EVAL_RUNS, MIN_EVAL_RUNS } from './lib/eval-run.js';
-import { runPromptComparison, MAX_EVAL_CASES } from './lib/eval-compare.js';
+import { runPromptComparison } from './lib/eval-compare.js';
 import { createLlmProvider, requiredApiKeyName } from './lib/llm/provider.js';
-import { DEFAULT_METRIC_ID, isValidMetricId } from './lib/metrics/index.js';
+import { DEFAULT_METRIC_ID, getMetric, isValidMetricId } from './lib/metrics/index.js';
 import { assertAllowedModel, findAllowedModel, normalizeSessionConfig } from './lib/session-config.js';
 import { normalizeEvalSession } from './lib/eval-session.js';
 import {
@@ -16,12 +15,27 @@ import {
   defaultEvalReportPath,
 } from './lib/eval-report.js';
 import { formatEvalProgress } from './lib/eval-progress.js';
+import {
+  appendAssessmentLog,
+  assessmentPaths,
+  buildSubmission,
+  readSubmission,
+  sessionFromSubmission,
+  summarizeCalibration,
+  summarizeEvaluation,
+  summarizeLatestEvaluation,
+  withHistoryRow,
+  writeSubmissionFiles,
+} from './lib/assessment-store.js';
+import { runCustomCheckCalibration } from './lib/custom-check-calibration.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_CONFIG_FILE = path.join(__dirname, 'session.config.json');
 const EVAL_SESSION_FILE = path.join(__dirname, 'eval-session.json');
 const EVAL_REPORT_FILE = defaultEvalReportPath(__dirname);
+const ASSESSMENT_FILES = assessmentPaths(__dirname);
 const evalReportWrite = { chain: Promise.resolve() };
+const assessmentWrite = { chain: Promise.resolve() };
 const app = express();
 const PORT = Number.parseInt(process.env.PORT ?? '3000', 10) || 3000;
 
@@ -147,6 +161,32 @@ async function persistEvalReport(payload) {
   }
 }
 
+/**
+ * Update the server-written assessment files (best-effort, serialized).
+ * `update` receives the previous submission.json and returns the next one.
+ * @param {(previous: Record<string, any>) => Record<string, any>} update
+ * @param {object} [logEntry] appended to evaluations.jsonl first
+ */
+async function persistAssessment(update, logEntry) {
+  try {
+    await enqueueSessionsWrite(async () => {
+      if (logEntry) await appendAssessmentLog(ASSESSMENT_FILES.evaluationsLog, logEntry);
+      const previous = await readSubmission(ASSESSMENT_FILES.submissionJson);
+      await writeSubmissionFiles(ASSESSMENT_FILES, update(previous));
+    }, assessmentWrite);
+  } catch (err) {
+    console.error('[assessment] Failed to write .codesignal submission files:', err);
+  }
+}
+
+/**
+ * Current saved session, for history rows written before the browser saves.
+ * @param {Awaited<ReturnType<typeof sessionLimitsFromConfig>>} limits
+ */
+async function savedSession(limits) {
+  return normalizeEvalSession(await readJsonFile(EVAL_SESSION_FILE, {}), limits);
+}
+
 /** Clear the cached provider. Used by tests when mocking createLlmProvider. */
 export function resetLlmCache() {
   cachedLlm = undefined;
@@ -169,37 +209,148 @@ app.get('/api/session-config', async (_req, res) => {
 
 const evalSessionWrite = { chain: Promise.resolve() };
 
-async function sessionLimitsFromConfig() {
-  const config = normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {}));
+/**
+ * @param {ReturnType<typeof normalizeSessionConfig>} config
+ */
+function sessionLimits(config) {
   return {
     ...config.defaults,
     allowedMetricIds: config.allowedMetricIds,
     promptTemplating: config.features.promptTemplating,
+    assessment: config.assessment,
   };
+}
+
+async function sessionLimitsFromConfig() {
+  return sessionLimits(normalizeSessionConfig(await readJsonFile(SESSION_CONFIG_FILE, {})));
 }
 
 // One working eval session (prompts, cases, settings, last results).
 // Missing file → { session: null } so the client can fall back to initialSession.
 app.get('/api/eval/session', async (_req, res) => {
-  const raw = await readJsonFile(EVAL_SESSION_FILE, null);
+  const config = await sessionLlmConfig();
+  let raw = await readJsonFile(EVAL_SESSION_FILE, null);
+  if (raw == null && config.assessment.enabled) {
+    raw = sessionFromSubmission(await readSubmission(ASSESSMENT_FILES.submissionJson));
+  }
   if (raw == null) return res.json({ session: null });
-  const limits = await sessionLimitsFromConfig();
-  res.json({ session: normalizeEvalSession(raw, limits) });
+  res.json({ session: normalizeEvalSession(raw, sessionLimits(config)) });
 });
 
 app.put('/api/eval/session', async (req, res) => {
   try {
-    const limits = await sessionLimitsFromConfig();
-    const session = normalizeEvalSession(req.body, limits);
+    const config = await sessionLlmConfig();
+    const session = normalizeEvalSession(req.body, sessionLimits(config));
     await enqueueSessionsWrite(async () => {
       await writeJsonFileAtomic(EVAL_SESSION_FILE, session);
     }, evalSessionWrite);
+    if (config.assessment.enabled) {
+      await persistAssessment((previous) => buildSubmission({ config, session, previous }));
+    }
     res.json({ session });
   } catch (err) {
     console.error('[eval/session] Error:', err);
     res.status(500).json({ error: 'Failed to save eval session' });
   }
 });
+
+// Assessment level id, polled by the client so a new level's config loads
+// even when the platform does not reload the preview between levels.
+app.get('/api/assessment/stage', async (_req, res) => {
+  const { assessment } = await sessionLlmConfig();
+  res.json({ enabled: assessment.enabled, stage: assessment.stage });
+});
+
+// ── POST /api/check/calibrate ─────────────────────────────────
+// Apply the candidate's custom check to reviewer-labeled sample outputs from
+// session.config.json and report how often it agrees with the reviewer.
+app.post('/api/check/calibrate', async (req, res) => {
+  const config = await sessionLlmConfig();
+  const { assessment } = config;
+  if (!assessment.enabled || !assessment.customCheck.enabled) {
+    return res.status(404).json({ error: 'Custom check is not enabled' });
+  }
+  const criteria = typeof req.body?.criteria === 'string' ? req.body.criteria.trim() : '';
+  if (!criteria) {
+    return res.status(400).json({ error: 'Write your check criteria before testing it' });
+  }
+  if (criteria.length > assessment.customCheck.maxCriteriaLength) {
+    return res.status(400).json({
+      error: `Check criteria must be at most ${assessment.customCheck.maxCriteriaLength} characters`,
+    });
+  }
+  const samples = assessment.customCheck.calibrationSamples;
+  if (samples.length === 0) {
+    return res.status(400).json({ error: 'No reviewer samples are configured for this level' });
+  }
+  const judge = resolveJudgeLlm(res, config, config.model);
+  if (!judge) return;
+
+  try {
+    const calibration = await runCustomCheckCalibration({
+      llm: judge.judgeLlm,
+      model: judge.judgeModel,
+      criteria,
+      samples,
+      maxConcurrency: config.maxConcurrency,
+    });
+    const at = new Date().toISOString();
+    await persistAssessment(
+      (previous) => {
+        const n = (previous.history?.calibrations?.length ?? 0) + 1;
+        return withHistoryRow(previous, 'calibrations', summarizeCalibration({
+          n,
+          at,
+          stage: assessment.stage,
+          calibration,
+        }));
+      },
+      { type: 'calibration', at, stage: assessment.stage, ...calibration },
+    );
+    res.json(calibration);
+  } catch (err) {
+    console.error('[check/calibrate] Error:', err);
+    res.status(500).json({ error: 'Failed to test the check' });
+  }
+});
+
+/**
+ * Assessment mode: provided cases come from the server config (selected by id)
+ * and are placed before the candidate's own cases.
+ * @param {ReturnType<typeof normalizeSessionConfig>['assessment']} assessment
+ * @param {unknown} providedCaseIds
+ * @param {unknown} candidateCases
+ * @returns {{ cases: object[] } | { error: string }}
+ */
+function assessmentCases(assessment, providedCaseIds, candidateCases) {
+  const byId = new Map(assessment.providedCases.map((c) => [c.id, c]));
+  let selected = assessment.providedCases;
+  if (providedCaseIds !== undefined) {
+    if (!Array.isArray(providedCaseIds) || providedCaseIds.some((id) => !byId.has(id))) {
+      return { error: 'providedCaseIds must list provided case ids' };
+    }
+    const wanted = new Set(providedCaseIds);
+    selected = assessment.providedCases.filter((c) => wanted.has(c.id));
+  }
+  const own = Array.isArray(candidateCases) ? candidateCases : [];
+  if (!assessment.allowCandidateCases && own.length > 0) {
+    return { error: 'This level uses only the provided cases' };
+  }
+  if (own.length > assessment.maxCandidateCases) {
+    return { error: `You can add at most ${assessment.maxCandidateCases} cases of your own` };
+  }
+  return {
+    cases: [
+      ...selected.map((c) => ({ ...c, provided: true })),
+      ...own.map((c, i) => ({
+        ...(c && typeof c === 'object' ? c : {}),
+        id: `own-${typeof c?.id === 'string' && c.id ? c.id : i + 1}`,
+        label: `Your case ${i + 1}`,
+        provided: false,
+      })),
+    ],
+  };
+}
 
 // ── POST /api/eval/compare ────────────────────────────────────
 // Evaluate Prompt A across cases; optionally compare with Prompt B under
@@ -218,7 +369,10 @@ app.post('/api/eval/compare', async (req, res) => {
     expectedAnswer,
     metricId,
     examples,
+    providedCaseIds,
+    customCheck,
   } = req.body ?? {};
+  const { assessment, defaults } = config;
 
   if (typeof promptA !== 'string') {
     return res.status(400).json({ error: 'promptA (string) is required' });
@@ -226,15 +380,27 @@ app.post('/api/eval/compare', async (req, res) => {
   if (promptB !== undefined && promptB !== null && typeof promptB !== 'string') {
     return res.status(400).json({ error: 'promptB must be a string when provided' });
   }
-  if (cases !== undefined) {
-    if (!Array.isArray(cases)) {
-      return res.status(400).json({ error: 'cases must be an array when provided' });
-    }
-    if (cases.length < 1 || cases.length > MAX_EVAL_CASES) {
-      return res.status(400).json({
-        error: `cases must contain between 1 and ${MAX_EVAL_CASES} items`,
-      });
-    }
+  const maxPromptLength = config.assessment.enabled ? config.assessment.maxPromptLength : null;
+  const tooLongPrompt = maxPromptLength != null
+    && [promptA, promptB].find((p) => typeof p === 'string' && p.length > maxPromptLength);
+  if (tooLongPrompt) {
+    return res.status(400).json({
+      error: `A prompt can be at most ${maxPromptLength} characters; this one is ${tooLongPrompt.length}.`,
+    });
+  }
+  if (cases !== undefined && !Array.isArray(cases)) {
+    return res.status(400).json({ error: 'cases must be an array when provided' });
+  }
+  let evalCases = Array.isArray(cases) ? cases : undefined;
+  if (assessment.enabled) {
+    const merged = assessmentCases(assessment, providedCaseIds, cases);
+    if ('error' in merged) return res.status(400).json({ error: merged.error });
+    evalCases = merged.cases;
+  }
+  if (evalCases !== undefined && (evalCases.length < 1 || evalCases.length > defaults.maxCases)) {
+    return res.status(400).json({
+      error: `cases must contain between 1 and ${defaults.maxCases} items`,
+    });
   }
   if (input !== undefined && typeof input !== 'string') {
     return res.status(400).json({ error: 'input must be a string when provided' });
@@ -247,15 +413,41 @@ app.post('/api/eval/compare', async (req, res) => {
       return res.status(400).json({ error: `Metric "${metricId}" is not enabled` });
     }
   }
-  const judge = metricId === 'llm-judge'
+  // Assessment mode never falls back to a metric the level did not enable.
+  const effectiveMetricId = typeof metricId === 'string' && metricId
+    ? metricId
+    : (assessment.enabled ? config.allowedMetricIds[0] : DEFAULT_METRIC_ID);
+  const criteria = typeof customCheck?.criteria === 'string' ? customCheck.criteria.trim() : '';
+  if (effectiveMetricId === 'custom-check') {
+    if (!criteria) {
+      return res.status(400).json({ error: 'Write your custom check criteria before running it' });
+    }
+    if (criteria.length > assessment.customCheck.maxCriteriaLength) {
+      return res.status(400).json({
+        error: `Check criteria must be at most ${assessment.customCheck.maxCriteriaLength} characters`,
+      });
+    }
+  }
+  const usesJudge = getMetric(effectiveMetricId)?.type === 'llm';
+  const judge = usesJudge
     ? resolveJudgeLlm(res, config, model)
     : null;
-  if (metricId === 'llm-judge' && !judge) return;
+  if (usesJudge && !judge) return;
   if (runs !== undefined && runs !== null) {
     const parsed = Number.parseInt(String(runs), 10);
-    if (!Number.isFinite(parsed) || parsed < MIN_EVAL_RUNS || parsed > MAX_EVAL_RUNS) {
+    if (!Number.isFinite(parsed) || parsed < defaults.minRuns || parsed > defaults.maxRuns) {
       return res.status(400).json({
-        error: `runs must be an integer between ${MIN_EVAL_RUNS} and ${MAX_EVAL_RUNS}`,
+        error: `runs must be an integer between ${defaults.minRuns} and ${defaults.maxRuns}`,
+      });
+    }
+  }
+  if (assessment.enabled) {
+    const runCount = Number.parseInt(String(runs ?? defaults.runs), 10);
+    const promptCount = typeof promptB === 'string' && promptB.trim() !== '' ? 2 : 1;
+    const calls = evalCases.length * promptCount * runCount * (usesJudge ? 2 : 1);
+    if (calls > assessment.maxCallsPerEvaluation) {
+      return res.status(400).json({
+        error: `This evaluation needs ${calls} model calls; the limit is ${assessment.maxCallsPerEvaluation}. Use fewer runs or cases.`,
       });
     }
   }
@@ -282,6 +474,8 @@ app.post('/api/eval/compare', async (req, res) => {
         llm,
         judgeLlm: judge?.judgeLlm,
         judgeModel: judge?.judgeModel,
+        ...(assessment.temperature != null ? { temperature: assessment.temperature } : {}),
+        ...(assessment.reasoningEffort ? { reasoningEffort: assessment.reasoningEffort } : {}),
       },
       {
         prompts: [
@@ -294,15 +488,19 @@ app.post('/api/eval/compare', async (req, res) => {
             ? [{ id: 'B', label: 'Prompt B', promptTemplate: promptB }]
             : []),
         ],
-        cases: Array.isArray(cases) ? cases : undefined,
+        cases: evalCases,
         examples: config.features.promptTemplating.allowExamples && Array.isArray(examples)
           ? examples
           : [],
         promptTemplating: config.features.promptTemplating,
         input: typeof input === 'string' ? input : '',
         expectedAnswer: typeof expectedAnswer === 'string' ? expectedAnswer : '',
-        metricId: typeof metricId === 'string' && metricId ? metricId : DEFAULT_METRIC_ID,
-        runs,
+        metricId: effectiveMetricId,
+        criteria,
+        consistency: assessment.enabled && assessment.consistency.enabled
+          ? { fields: assessment.consistency.fields }
+          : null,
+        runs: runs ?? (assessment.enabled ? defaults.runs : undefined),
         maxConcurrency: config.maxConcurrency,
         onProgress: sendEvent
           ? (progress) => {
@@ -321,6 +519,38 @@ app.post('/api/eval/compare', async (req, res) => {
       promptB: typeof promptB === 'string' && promptB.trim() !== '' ? promptB : undefined,
       result,
     });
+    if (assessment.enabled) {
+      const at = new Date().toISOString();
+      const session = await savedSession(sessionLimits(config));
+      await persistAssessment(
+        (previous) => {
+          const base = previous.version
+            ? previous
+            : buildSubmission({ config, session, previous });
+          const n = (base.history?.evaluations?.length ?? 0) + 1;
+          return {
+            ...withHistoryRow(base, 'evaluations', summarizeEvaluation({
+              n,
+              at,
+              stage: assessment.stage,
+              result,
+              promptTemplate: promptA,
+            })),
+            latestEvaluation: summarizeLatestEvaluation(result),
+          };
+        },
+        {
+          type: 'evaluation',
+          at,
+          stage: assessment.stage,
+          model,
+          provider: llm.name,
+          promptA,
+          ...(typeof promptB === 'string' && promptB.trim() !== '' ? { promptB } : {}),
+          result,
+        },
+      );
+    }
     if (sendEvent) {
       sendEvent('result', result);
       res.end();
