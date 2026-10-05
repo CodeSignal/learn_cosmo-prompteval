@@ -179,6 +179,14 @@ server bundle (Express + LLM SDKs inlined — no `node_modules`), and the static
 files the server serves. Extract `dist.tar.gz` and run `node server.js`. Supply
 `session.config.json` and `.env` at runtime.
 
+The release also bundles the grading modules (`lib/grading.js`,
+`lib/session-config.js`, `lib/llm/provider.js`, `lib/helpers.js`,
+`lib/copy-detection.js`, `lib/eval-compare.js`, `lib/metrics/index.js`,
+`lib/consistency.js`, `lib/custom-check-calibration.js`) at their source paths
+under `lib/`. Hidden assessment tests import them by path, so they work against
+a release the same way as against the source tree. `npm run pack` checks that
+each one loads and that a prompt grades end to end.
+
 Download URLs:
 
 - Stable: `.../releases/latest/download/dist.tar.gz`
