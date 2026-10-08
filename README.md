@@ -100,7 +100,68 @@ With `dynamicFields`, placeholders such as `{{context}}`, `{{input}}`, and `{{co
 
 Work-in-progress (prompts, cases, settings, and the last results) is stored in `eval-session.json`. That file is local and not checked in. A saved session wins over `initialSession` on reload.
 
-After each evaluation run, the server appends a numbered `Evaluation` section to `.codesignal/report.md`. The report keeps all evaluations from the current workspace, including each evaluation's setup, overall scores, cases, and individual runs. That file is gitignored.
+The server stores each evaluation's results in `eval-session.json` itself; the page's autosave sends only the editable work (prompts, cases, settings), so saves stay small however large a run is, and a failed save shows a "not saved yet, retrying" notice. After each evaluation run, the server appends a numbered `Evaluation` section to `.codesignal/report.md`. The report keeps all evaluations from the current workspace, including each evaluation's setup, overall scores, cases, and individual runs. That file is gitignored.
+
+### Assessment mode
+
+Graded assessments turn on an `assessment` block. Without it, every Course behavior above is unchanged. In assessment mode:
+
+- **Limits are higher.** `defaults.maxRuns` can go up to 10 and `defaults.maxCases` up to 20 cases per evaluation. The server enforces the configured run and case ranges in every mode.
+- **Provided cases are locked.** `providedCases` are served from the config, merged in by the server before the candidate's own cases, and never stored in `eval-session.json`. The candidate can untick a case to leave it out of a run but cannot change it.
+- **Reference material is built in.** `materials` show in a Reference panel, for example a policy memo the prompt must follow.
+- **The header reads as the client's product.** The course mascot and branding are hidden; `eyebrow` sets the small line above the title (for example "Harbor & Hearth · Menu label pilot"), and a new level starts with an empty Results panel.
+- **Two metrics are added:**
+  - `field-match` scores only the labeled `Label: value` lines written in Expected Answer.
+  - `custom-check` has the fixed judge (`llmJudgeModel`) apply the candidate's own plain-English pass/fail criteria and give a one-sentence reason.
+- **The custom check can be calibrated.** With `customCheck.enabled`, the candidate writes criteria and uses **Test my check** (`POST /api/check/calibrate`) to see how often the check agrees with reviewer-labeled `calibrationSamples`.
+- **Consistency is measured.** With `consistency.enabled`, every evaluation reports how many runs agree with the most common answer. It compares only `consistency.fields` (for example Allergens and Diet, so free text can vary) and counts runs missing a field as disagreeing. Overall stability is the mean agreement across cases.
+- **Notes.** `notes.enabled` adds a free-text panel, for example for a findings write-up.
+- **A call budget.** `maxCallsPerEvaluation` caps cases × prompts × runs, with judge calls counting double.
+- **Generation settings.** `temperature` and `reasoningEffort` (`none` to `max`) apply to every generation call.
+- **Length limits are explicit.** `maxPromptLength` caps the graded prompt, custom check criteria are capped at 4,000 characters, and notes at `notes.maxLength`. Over-limit text shows a counter and an error, and the server rejects it instead of truncating.
+- **Copy/paste is measured.** The prompt and the check criteria are compared with `materials` by four-word phrases (`lib/copy-detection.js`). The counts and a YES/NO verdict go into the submission files.
+
+```json
+{
+  "model": "openai/gpt-6-luna",
+  "allowedModels": ["openai/gpt-6-luna"],
+  "allowedMetricIds": ["field-match", "custom-check"],
+  "llmJudgeModel": "openai/gpt-6-luna",
+  "defaults": { "runs": 3, "minRuns": 1, "maxRuns": 10, "maxCases": 15 },
+  "assessment": {
+    "enabled": true,
+    "stage": "level-2",
+    "stageLabel": "Level 2 of 3 · Build your check",
+    "lede": "One sentence shown under the title.",
+    "maxCandidateCases": 5,
+    "maxCallsPerEvaluation": 120,
+    "maxPromptLength": 4000,
+    "reasoningEffort": "low",
+    "materials": [{ "title": "Policy memo", "body": "…" }],
+    "providedCases": [{ "id": "p1", "label": "…", "input": "…", "expectedAnswer": "Label: value" }],
+    "customCheck": {
+      "enabled": true,
+      "calibrationSamples": [{ "id": "s1", "input": "…", "output": "…", "verdict": "pass", "note": "…" }]
+    },
+    "consistency": { "enabled": true, "fields": ["Label"] },
+    "notes": { "enabled": true, "label": "Findings", "placeholder": "…" }
+  }
+}
+```
+
+**Server-written files for grading.** After every save, evaluation, and calibration, the server writes three files under `.codesignal/`. None of them trusts scores reported by the browser: graders re-run the candidate's prompt and criteria on hidden data.
+
+- `submission.json` holds the candidate's current work: the graded prompt, their own cases, custom check criteria, and notes. It also keeps a compact history of evaluations and calibrations, with prompt and criteria version hashes.
+- `submission.md` is the same content in a compact form for rubric graders.
+- `evaluations.jsonl` is append-only, one line per evaluation or calibration, with full outputs.
+
+`lib/grading.js` re-runs a saved prompt or custom check on hidden data the same way the simulator scores it. It builds on `lib/eval-compare.js`, `lib/metrics`, `lib/consistency.js`, and `lib/custom-check-calibration.js`, which are importable too.
+
+**Restoring submitted work.** A task's hidden tests can call `recordSubmittedWork` (`lib/submitted-versions.js`) to save the scored fields (prompt, custom check criteria, notes) to `.codesignal/submitted-versions.json`. The simulator then shows a "Restore a submitted …" menu under each of those fields, like restoring a coding submission, with Undo.
+
+> **Unusual but deliberate: the submit hook lives in the hidden tests, not in `main.sh`.** On CodeSignal, **Submit** runs the test runner inside the live workspace with the hidden files readable for that run only. **Run** executes `main.sh` with the hidden files moved away. So code in the hidden tests runs on Submit only, while a hook in `main.sh` would fire on every Run click and never on Submit. Keep the hook out of `it()` blocks so it never counts as a test.
+
+**Progressive tasks.** Ship a different read-only `session.config.json` per level with a new `stage`. The candidate's `eval-session.json` carries over (prompt, own cases, criteria, notes). Provided cases and materials always come from the current level's config. The page polls `GET /api/assessment/stage` and reloads when the level changes, and the first load of a new level shows a "New level" banner.
 
 ## Run
 
@@ -122,6 +183,14 @@ release tag, then `npm run pack`: a minified client bundle, a single-file
 server bundle (Express + LLM SDKs inlined — no `node_modules`), and the static
 files the server serves. Extract `dist.tar.gz` and run `node server.js`. Supply
 `session.config.json` and `.env` at runtime.
+
+The release also bundles the grading modules (`lib/grading.js`,
+`lib/session-config.js`, `lib/llm/provider.js`, `lib/helpers.js`,
+`lib/copy-detection.js`, `lib/eval-compare.js`, `lib/metrics/index.js`,
+`lib/consistency.js`, `lib/custom-check-calibration.js`, `lib/submitted-versions.js`) at their source
+paths under `lib/`. Hidden assessment tests import them by path, so they work against
+a release the same way as against the source tree. `npm run pack` checks that
+each one loads and that a prompt grades end to end.
 
 Download URLs:
 

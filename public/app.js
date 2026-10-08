@@ -13,6 +13,16 @@ import {
 import { collectPromptScoresByCase } from '../lib/score-distribution.js';
 import { enqueueSessionsWrite } from '../lib/sessions-file.js';
 import {
+  renderCalibration,
+  renderCaseConsistency,
+  renderIncludeToggle,
+  renderMaterials,
+  renderOverallConsistency,
+  renderProvidedCases,
+  renderRestoreOptions,
+} from './assessment-view.js';
+import {
+  DEFAULT_ASSESSMENT,
   DEFAULT_PROMPT_TEMPLATING,
   FALLBACK_DEFAULTS,
   findAllowedModel,
@@ -48,6 +58,9 @@ const previewWarning = document.getElementById('previewWarning');
 const templatePreview = document.getElementById('templatePreview');
 const setupHeading = document.getElementById('setupHeading');
 const headerLede = document.getElementById('headerLede');
+const headerEyebrow = document.getElementById('headerEyebrow');
+const saveStatusEl = document.getElementById('saveStatus');
+const brandAvatar = document.getElementById('brandAvatar');
 const resultsEmptyCopy = document.getElementById('resultsEmptyCopy');
 const compareToggleRow = document.getElementById('compareToggleRow');
 const enableCompareBtn = document.getElementById('enableCompareBtn');
@@ -82,6 +95,33 @@ const overallGrid = document.getElementById('overallGrid');
 const caseResultsEl = document.getElementById('caseResults');
 const caseDetailsPanel = document.getElementById('caseDetailsPanel');
 const caseDetailsTitle = document.getElementById('caseDetailsTitle');
+const stageLabelEl = document.getElementById('stageLabel');
+const stageBanner = document.getElementById('stageBanner');
+const stageBannerTitle = document.getElementById('stageBannerTitle');
+const dismissStageBannerBtn = document.getElementById('dismissStageBannerBtn');
+const referencePanel = document.getElementById('referencePanel');
+const materialsList = document.getElementById('materialsList');
+const providedCasesWrap = document.getElementById('providedCasesWrap');
+const providedCasesList = document.getElementById('providedCasesList');
+const ownCasesTitle = document.getElementById('ownCasesTitle');
+const ownCasesHint = document.getElementById('ownCasesHint');
+const fieldMatchHelp = document.getElementById('fieldMatchHelp');
+const customCheckHelp = document.getElementById('customCheckHelp');
+const customCheckHelpNote = document.getElementById('customCheckHelpNote');
+const runEstimate = document.getElementById('runEstimate');
+const customCheckPanel = document.getElementById('customCheckPanel');
+const customCheckHeading = document.getElementById('customCheckHeading');
+const customCheckInput = document.getElementById('customCheckInput');
+const customCheckCounter = document.getElementById('customCheckCounter');
+const calibrateBtn = document.getElementById('calibrateBtn');
+const calibrateStatus = document.getElementById('calibrateStatus');
+const calibrateError = document.getElementById('calibrateError');
+const calibrationResults = document.getElementById('calibrationResults');
+const notesPanel = document.getElementById('notesPanel');
+const notesHeading = document.getElementById('notesHeading');
+const notesInput = document.getElementById('notesInput');
+const notesCounter = document.getElementById('notesCounter');
+const promptCounter = document.getElementById('promptCounter');
 
 let MIN_RUNS = FALLBACK_DEFAULTS.minRuns;
 let MAX_RUNS = FALLBACK_DEFAULTS.maxRuns;
@@ -94,6 +134,10 @@ let ALLOWED_MODELS = [];
 let ALLOWED_METRIC_IDS = [];
 let LLM_JUDGE_MODEL = '';
 let PROMPT_TEMPLATING = { ...DEFAULT_PROMPT_TEMPLATING };
+let ASSESSMENT = structuredClone(DEFAULT_ASSESSMENT);
+let isBusy = false;
+let isCalibrating = false;
+const STAGE_POLL_MS = 15000;
 
 const COMPONENT_META = {
   context: {
@@ -125,8 +169,66 @@ function isStrictTemplateMode() {
   return PROMPT_TEMPLATING.enabled && PROMPT_TEMPLATING.strictFields;
 }
 
+function isAssessmentMode() {
+  return ASSESSMENT.enabled === true;
+}
+
 function maxVisibleInputs() {
+  if (isAssessmentMode()) {
+    return ASSESSMENT.allowCandidateCases ? ASSESSMENT.maxCandidateCases : 0;
+  }
   return isBuilderMode() && !PROMPT_TEMPLATING.builder.allowMultipleInputs ? 1 : MAX_CASES;
+}
+
+/** Assessment cases may all be provided, so candidates can remove every case of their own. */
+function minOwnCases() {
+  return isAssessmentMode() ? 0 : MIN_CASES;
+}
+
+function excludedCaseIds() {
+  return new Set(session.excludedCaseIds ?? []);
+}
+
+function includedProvidedCases() {
+  const excluded = excludedCaseIds();
+  return ASSESSMENT.providedCases.filter((c) => !excluded.has(c.id));
+}
+
+function caseHasContent(c) {
+  return Boolean(c.input.trim() || Object.values(c.variables ?? {}).some((value) => value.trim()));
+}
+
+function includedOwnCases() {
+  const excluded = excludedCaseIds();
+  return session.cases.filter((c) => !excluded.has(c.id) && caseHasContent(c));
+}
+
+function setCaseIncluded(id, included) {
+  const excluded = excludedCaseIds();
+  if (included) excluded.delete(id);
+  else excluded.add(id);
+  session.excludedCaseIds = [...excluded];
+}
+
+function usesJudge(metricId) {
+  return metricId === 'llm-judge' || metricId === 'custom-check';
+}
+
+function updateRunEstimate() {
+  if (!isAssessmentMode()) {
+    runEstimate.hidden = true;
+    return;
+  }
+  const caseCount = includedProvidedCases().length + includedOwnCases().length;
+  const promptCount = session.compareMode ? 2 : 1;
+  const runs = clampRuns(runCountEl.value);
+  const calls = caseCount * promptCount * runs * (usesJudge(metricSelectEl.value) ? 2 : 1);
+  const limit = ASSESSMENT.maxCallsPerEvaluation;
+  runEstimate.hidden = false;
+  runEstimate.classList.toggle('eval-run-estimate--over', calls > limit);
+  runEstimate.textContent = calls > limit
+    ? `${caseCount} case${caseCount === 1 ? '' : 's'} × ${runs} run${runs === 1 ? '' : 's'} needs ${calls} model calls — over the limit of ${limit}. Use fewer runs or cases.`
+    : `${caseCount} case${caseCount === 1 ? '' : 's'} × ${runs} run${runs === 1 ? '' : 's'} = ${calls} model call${calls === 1 ? '' : 's'} (limit ${limit})`;
 }
 
 function defaultTemplateFieldLabel(name) {
@@ -255,6 +357,7 @@ function sessionLimits() {
     maxCases: MAX_CASES,
     allowedMetricIds: ALLOWED_METRIC_IDS,
     promptTemplating: PROMPT_TEMPLATING,
+    assessment: ASSESSMENT,
   };
 }
 
@@ -275,6 +378,11 @@ function newExampleId() {
 
 function updateCasesSummary() {
   const n = session.cases.length;
+  if (isAssessmentMode()) {
+    const provided = ASSESSMENT.providedCases.length;
+    casesSummaryMeta.textContent = `${provided} provided · ${n} of your own`;
+    return;
+  }
   casesSummaryMeta.textContent = isBuilderMode()
     ? `${n} input${n === 1 ? '' : 's'}`
     : `${n} case${n === 1 ? '' : 's'}`;
@@ -320,6 +428,11 @@ function syncCompareModeUi() {
       ? 'Compare two prompt versions. Each test question is appended under both prompts so the comparison is fair.'
       : 'Run a prompt across test cases. Each question is appended under your prompt and scored the same way every run.');
 
+  if (isAssessmentMode()) {
+    promptALabel.textContent = session.compareMode ? 'Prompt A (graded)' : 'Prompt (graded)';
+    if (ASSESSMENT.lede) headerLede.textContent = ASSESSMENT.lede;
+  }
+
   resultsEmptyCopy.textContent = isBuilderMode()
     ? 'Run your prompt to see the model response and optional score.'
     : session.compareMode
@@ -329,7 +442,13 @@ function syncCompareModeUi() {
 }
 
 function setBusy(busy) {
+  isBusy = busy;
   runBtn.disabled = busy;
+  calibrateBtn.disabled = busy || isCalibrating;
+  customCheckInput.readOnly = busy;
+  document.querySelectorAll('[data-include-case]').forEach((el) => {
+    el.disabled = busy;
+  });
   addCaseBtn.disabled = busy || session.cases.length >= maxVisibleInputs();
   enableCompareBtn.disabled = busy;
   disableCompareBtn.disabled = busy;
@@ -360,7 +479,7 @@ function setBusy(busy) {
     else if (el.classList.contains('eval-case__toggle')) el.disabled = false;
     else {
       el.disabled = busy
-        || (el.classList.contains('eval-case__remove') && session.cases.length <= MIN_CASES);
+        || (el.classList.contains('eval-case__remove') && session.cases.length <= minOwnCases());
     }
   });
   templateTools.querySelectorAll('textarea, select, button').forEach((el) => {
@@ -707,7 +826,7 @@ function renderCases() {
         ? ''
         : `
           <label class="eval-field">
-            <span class="body-xxsmall eval-field__label">${isBuilderMode() ? 'Input' : 'Question'}</span>
+            <span class="body-xxsmall eval-field__label">${isBuilderMode() || isAssessmentMode() ? 'Input' : 'Question'}</span>
             <textarea class="input" data-field="input" rows="2" spellcheck="false">${escapeHtml(c.input)}</textarea>
           </label>
         `;
@@ -763,15 +882,16 @@ function renderCases() {
               data-toggle-case="${escapeHtml(c.id)}"
               aria-expanded="${collapsed ? 'false' : 'true'}"
             >
-              <span>${isBuilderMode() ? `Input ${index + 1}` : `Case ${index + 1}`}</span>
+              <span>${isBuilderMode() ? `Input ${index + 1}` : `${isAssessmentMode() ? 'Your case' : 'Case'} ${index + 1}`}</span>
               <span class="body-xxsmall eval-case__snippet">${escapeHtml(caseSnippet(c))}</span>
             </button>
           </h4>
+          ${isAssessmentMode() ? renderIncludeToggle(c.id, !excludedCaseIds().has(c.id), isBusy) : ''}
           <button
             type="button"
             class="button button-tertiary eval-case__remove"
             data-remove="${escapeHtml(c.id)}"
-            ${session.cases.length <= MIN_CASES ? 'disabled' : ''}
+            ${session.cases.length <= minOwnCases() ? 'disabled' : ''}
           >Remove</button>
         </div>
         <div class="eval-case__body"${collapsed ? ' hidden' : ''}>
@@ -789,6 +909,93 @@ function renderCases() {
   addCaseBtn.disabled = session.cases.length >= maxVisibleInputs();
   updateCasesSummary();
   updateTemplatePreview();
+  updateRunEstimate();
+}
+
+function renderProvidedCasesList() {
+  if (!isAssessmentMode()) return;
+  providedCasesList.innerHTML = renderProvidedCases(ASSESSMENT.providedCases, excludedCaseIds(), isBusy);
+  providedCasesList.hidden = ASSESSMENT.providedCases.length === 0;
+  updateRunEstimate();
+}
+
+function updateCounter(el, value, max) {
+  const over = value.length > max;
+  el.textContent = over
+    ? `${value.length} / ${max} characters — too long by ${value.length - max}. Shorten it before it can be used or graded.`
+    : `${value.length} / ${max} characters`;
+  el.classList.toggle('eval-counter--over', over);
+}
+
+/** Counter for the graded prompt; Prompt B is checked when the run starts. */
+function updatePromptCounter() {
+  const max = isAssessmentMode() ? ASSESSMENT.maxPromptLength : null;
+  promptCounter.hidden = max == null;
+  if (max != null) updateCounter(promptCounter, promptAEl.value, max);
+}
+
+function promptTooLong() {
+  const max = isAssessmentMode() ? ASSESSMENT.maxPromptLength : null;
+  if (max == null) return null;
+  return [session.promptA, session.compareMode ? session.promptB : ''].find((p) => (p ?? '').length > max) ?? null;
+}
+
+function criteriaTooLong() {
+  return (session.customCheckCriteria ?? '').trim().length > ASSESSMENT.customCheck.maxCriteriaLength;
+}
+
+function renderCalibrationPanel() {
+  if (!isAssessmentMode() || !ASSESSMENT.customCheck.enabled) return;
+  updateCounter(customCheckCounter, customCheckInput.value, ASSESSMENT.customCheck.maxCriteriaLength);
+  calibrationResults.innerHTML = renderCalibration(
+    ASSESSMENT.customCheck.calibrationSamples,
+    session.lastCalibration,
+    customCheckInput.value,
+  );
+  calibrateBtn.hidden = ASSESSMENT.customCheck.calibrationSamples.length === 0;
+}
+
+function showCalibrateError(message) {
+  calibrateError.hidden = !message;
+  calibrateError.textContent = message || '';
+}
+
+async function runCalibration() {
+  showCalibrateError('');
+  pullSessionFromDom();
+  const criteria = (session.customCheckCriteria ?? '').trim();
+  if (!criteria) {
+    showCalibrateError('Write your check criteria before testing it.');
+    return;
+  }
+  if (criteriaTooLong()) {
+    showCalibrateError(`Your criteria are ${criteria.length} characters; the limit is ${ASSESSMENT.customCheck.maxCriteriaLength}. Shorten them first.`);
+    return;
+  }
+  const count = ASSESSMENT.customCheck.calibrationSamples.length;
+  isCalibrating = true;
+  calibrateBtn.disabled = true;
+  calibrateStatus.textContent = `Testing your check on ${count} reviewer sample${count === 1 ? '' : 's'}…`;
+  try {
+    const res = await fetch('api/check/calibrate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ criteria }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    session.lastCalibration = data;
+    renderCalibrationPanel();
+    persistSessionNow();
+    calibrateStatus.textContent = 'Done.';
+  } catch (err) {
+    console.error('[check] Calibration failed:', err);
+    calibrateStatus.textContent = '';
+    showCalibrateError(err?.message || 'Failed to test the check');
+  } finally {
+    isCalibrating = false;
+    calibrateBtn.disabled = isBusy;
+  }
 }
 
 function syncExamplesFromDom() {
@@ -950,11 +1157,26 @@ function renderRunList(results) {
               </div>
             </div>
             <pre class="eval-result__output body-small">${escapeHtml(body)}</pre>
+            ${result.checkReason
+              ? `<p class="body-xxsmall eval-result__note"><strong>Check:</strong> ${escapeHtml(result.checkReason)}</p>`
+              : ''}
+            ${result.scoreError
+              ? `<p class="body-xxsmall eval-result__note eval-result__note--error">Not scored: ${escapeHtml(result.scoreError)}</p>`
+              : ''}
           </li>
         `;
       }).join('')}
     </ol>
   `;
+}
+
+/**
+ * Runs whose model call failed. They have no score, so an evaluation where
+ * every run failed must not read as "add expected answers".
+ */
+function failedRuns(data) {
+  return (data.cases ?? []).flatMap((c) => (c.prompts ?? []).flatMap((p) => p.results ?? []))
+    .filter((r) => r.status === 'error' || r.error);
 }
 
 function renderVerdict(data) {
@@ -967,6 +1189,17 @@ function renderVerdict(data) {
     ? `${conditions.caseCount} input${conditions.caseCount === 1 ? '' : 's'}`
     : `${conditions.caseCount} case${conditions.caseCount === 1 ? '' : 's'}`;
   const hasScores = prompts.some((p) => p.aggregate);
+  const failed = failedRuns(data);
+  const totalRuns = (data.cases ?? []).reduce((n, c) => n + (c.prompts ?? []).reduce((m, p) => m + (p.results?.length ?? 0), 0), 0);
+
+  if (failed.length > 0 && failed.length === totalRuns) {
+    verdictBanner.className = 'eval-verdict eval-verdict--error';
+    verdictBanner.innerHTML = `
+      <p class="body-small eval-verdict__title"><strong>All ${totalRuns} run${totalRuns === 1 ? '' : 's'} failed — the model could not be reached</strong></p>
+      <p class="body-xxsmall eval-verdict__detail">${escapeHtml(failed[0].error || 'The model request failed.')}</p>
+    `;
+    return;
+  }
 
   if (!multi) {
     verdictBanner.className = 'eval-verdict eval-verdict--neutral';
@@ -984,6 +1217,9 @@ function renderVerdict(data) {
       <p class="body-xxsmall eval-verdict__detail">
         Overall mean ${meanA} across ${caseNote}. Check the score distribution below — a high mean can still hide unstable runs.
       </p>
+      ${failed.length > 0
+        ? `<p class="body-xxsmall eval-verdict__detail eval-stability--warn">${failed.length} of ${totalRuns} runs failed and are left out: ${escapeHtml(failed[0].error || 'model request failed')}</p>`
+        : ''}
     `;
     return;
   }
@@ -1097,6 +1333,10 @@ function renderOverallCards(data) {
             </span>
           </p>
           ${renderDistribution(groups)}
+          ${renderOverallConsistency(prompt.consistency)}
+          ${prompt.scoreErrors
+            ? `<p class="body-xxsmall eval-stability eval-stability--warn">${prompt.scoreErrors} run${prompt.scoreErrors === 1 ? '' : 's'} could not be scored and ${prompt.scoreErrors === 1 ? 'is' : 'are'} left out of the mean</p>`
+            : ''}
         </article>
       `;
     })
@@ -1128,6 +1368,7 @@ function renderCaseBlock(testCase, multi) {
           <header class="eval-prompt-col__header">
             <h4 class="body-xsmall">${escapeHtml(prompt.label)}</h4>
             <span class="body-xsmall">${prompt.aggregate ? `Mean ${mean}` : '—'}</span>
+            ${renderCaseConsistency(prompt.consistency)}
           </header>
           <details class="eval-details eval-details--nested">
             <summary class="eval-details__summary eval-details__summary--compact">
@@ -1150,7 +1391,7 @@ function renderCaseBlock(testCase, multi) {
     <section class="eval-case-result">
       <header class="eval-case-result__header">
         <div>
-          <h3 class="heading-xsmall">${escapeHtml(testCase.label)}</h3>
+          <h3 class="heading-xsmall">${escapeHtml(testCase.label)}${testCase.provided ? ' <span class="tag neutral">Provided</span>' : ''}</h3>
           <p class="body-xxsmall eval-case-result__meta">
             ${escapeHtml(testCase.input || '(empty question)')}
           </p>
@@ -1186,6 +1427,9 @@ function renderComparison(data) {
     duration,
     multi ? 'A vs B' : '',
     judgeModel ? `Judge: ${judgeModel}` : '',
+    Array.isArray(data.conditions.consistencyFields)
+      ? `Runs compared on ${data.conditions.consistencyFields.join(', ') || 'the whole output'}`
+      : '',
   ].filter(Boolean).join(' · ');
 
   renderVerdict(data);
@@ -1216,6 +1460,10 @@ async function runEvaluation() {
   }
   if (compareMode && !promptB.trim()) {
     showError('Enter Prompt B before comparing.');
+    return;
+  }
+  if (isAssessmentMode()) {
+    await runAssessmentEvaluation();
     return;
   }
   if (cases.length < MIN_CASES) {
@@ -1252,6 +1500,59 @@ async function runEvaluation() {
   };
   if (compareMode) body.promptB = promptB;
 
+  await submitEvaluation(body);
+}
+
+async function runAssessmentEvaluation() {
+  const {
+    promptA,
+    promptB,
+    compareMode,
+    metricId,
+    runs,
+  } = session;
+  const longPrompt = promptTooLong();
+  if (longPrompt) {
+    showError(`A prompt can be at most ${ASSESSMENT.maxPromptLength} characters; yours is ${longPrompt.length}. Shorten it before running.`);
+    return;
+  }
+  const provided = includedProvidedCases();
+  const own = includedOwnCases();
+  if (provided.length + own.length === 0) {
+    showError('Include at least one case with an input before running.');
+    return;
+  }
+  const criteria = (session.customCheckCriteria ?? '').trim();
+  if (metricId === 'custom-check' && !criteria) {
+    showError('Write your custom check criteria before running it.');
+    return;
+  }
+  if (metricId === 'custom-check' && criteriaTooLong()) {
+    showError(`Your check criteria are ${criteria.length} characters; the limit is ${ASSESSMENT.customCheck.maxCriteriaLength}. Shorten them in the Custom check panel.`);
+    return;
+  }
+  await submitEvaluation({
+    model: session.model,
+    promptA,
+    ...(compareMode ? { promptB } : {}),
+    providedCaseIds: provided.map((c) => c.id),
+    cases: own.map((c) => ({
+      id: c.id,
+      input: c.input,
+      expectedAnswer: c.expectedAnswer,
+      ...(PROMPT_TEMPLATING.enabled ? { variables: c.variables } : {}),
+    })),
+    runs,
+    metricId,
+    ...(metricId === 'custom-check' ? { customCheck: { criteria } } : {}),
+    ...(PROMPT_TEMPLATING.allowExamples && !isBuilderMode()
+      ? { examples: session.examples ?? [] }
+      : {}),
+  });
+}
+
+async function submitEvaluation(body) {
+  const { compareMode } = session;
   setBusy(true);
   try {
     const data = await fetchEvalComparison(body);
@@ -1290,12 +1591,23 @@ function updateMetricHelp() {
   llmJudgeHelp.hidden = metricId !== 'llm-judge';
   regexMatchHelp.hidden = metricId !== 'regex-match';
   validJsonHelp.hidden = metricId !== 'valid-json';
-  if (metricId !== 'llm-judge') return;
+  fieldMatchHelp.hidden = metricId !== 'field-match';
+  customCheckHelp.hidden = metricId !== 'custom-check';
+  updateRunEstimate();
+  if (!usesJudge(metricId)) return;
 
   const generationModel = ALLOW_USER_MODEL_SELECTION
     ? modelSelectEl.value
     : CONFIG_MODEL;
   const judgeModel = LLM_JUDGE_MODEL || generationModel;
+  if (metricId === 'custom-check') {
+    customCheckHelpNote.textContent = [
+      customCheckInput.value.trim() ? 'Uses the criteria in your Custom check panel' : 'Write your criteria in the Custom check panel first',
+      `Judge model: ${judgeModel}`,
+      '2 model calls per run',
+    ].join(' · ');
+    return;
+  }
   llmJudgeHelpNote.textContent = [
     'Expected Answer is required',
     `Judge model: ${judgeModel}`,
@@ -1351,6 +1663,149 @@ function configureFeatures(config) {
   configureTemplateTools();
 }
 
+function configureAssessment(config) {
+  ASSESSMENT = config.assessment ?? structuredClone(DEFAULT_ASSESSMENT);
+  const on = isAssessmentMode();
+  stageLabelEl.hidden = !on || !ASSESSMENT.stageLabel;
+  stageLabelEl.textContent = ASSESSMENT.stageLabel;
+  referencePanel.hidden = !on || ASSESSMENT.materials.length === 0;
+  materialsList.innerHTML = on ? renderMaterials(ASSESSMENT.materials) : '';
+  providedCasesWrap.hidden = !on;
+  customCheckPanel.hidden = !on || !ASSESSMENT.customCheck.enabled;
+  notesPanel.hidden = !on || !ASSESSMENT.notes.enabled;
+  if (!on) return;
+
+  // Assessments read as the client's own tool: no course branding.
+  brandAvatar.hidden = true;
+  headerEyebrow.hidden = !ASSESSMENT.eyebrow;
+  headerEyebrow.textContent = ASSESSMENT.eyebrow;
+
+  const ownAllowed = ASSESSMENT.allowCandidateCases;
+  ownCasesTitle.hidden = !ownAllowed;
+  ownCasesHint.hidden = !ownAllowed;
+  ownCasesHint.textContent = `Add up to ${ASSESSMENT.maxCandidateCases} cases of your own. They are scored exactly like the provided ones.`;
+  addCaseBtn.hidden = !ownAllowed;
+  addCaseBtn.textContent = 'Add your own case';
+  casesHint.textContent = ASSESSMENT.providedCases.length > 0
+    ? 'Provided cases are fixed for this level. Untick a case to leave it out of the next run.'
+    : 'Each case has an input and an optional expected answer for scoring.';
+  customCheckHeading.textContent = ASSESSMENT.customCheck.label;
+  customCheckInput.placeholder = ASSESSMENT.customCheck.placeholder;
+  notesHeading.textContent = ASSESSMENT.notes.label;
+  notesInput.placeholder = ASSESSMENT.notes.placeholder;
+}
+
+/**
+ * Reload when the platform switches this workspace to another level's config
+ * without reloading the preview. Pending edits are saved first.
+ */
+function watchAssessmentStage() {
+  if (!isAssessmentMode()) return;
+  setInterval(async () => {
+    void refreshSubmittedVersions();
+    if (isBusy || isCalibrating) return;
+    try {
+      const res = await fetch('api/assessment/stage');
+      const data = await res.json();
+      if (!data.enabled || data.stage === ASSESSMENT.stage) return;
+      clearTimeout(saveTimer);
+      // Reloading with unsaved edits would lose them; try again next tick.
+      if (!(await persistSession())) return;
+      window.location.reload();
+    } catch {
+      // Offline or restarting; try again on the next tick.
+    }
+  }, STAGE_POLL_MS);
+}
+
+/** Work saved on each Submit, newest first (see lib/submitted-versions.js). */
+let submittedVersions = [];
+/** Field text before the last restore, for Undo. */
+const textBeforeRestore = new Map();
+
+const RESTORE_INPUTS = {
+  prompt: promptAEl,
+  customCheckCriteria: customCheckInput,
+  notes: notesInput,
+};
+
+function formatSubmittedTime(iso) {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+async function refreshSubmittedVersions() {
+  if (!isAssessmentMode()) return;
+  try {
+    const res = await fetch('api/assessment/submitted-versions');
+    if (!res.ok) return;
+    const data = await res.json();
+    submittedVersions = Array.isArray(data.versions) ? data.versions : [];
+  } catch {
+    return;
+  }
+  renderRestoreMenus();
+}
+
+function restoreFieldEnabled(field) {
+  if (field === 'customCheckCriteria') return ASSESSMENT.customCheck.enabled;
+  if (field === 'notes') return ASSESSMENT.notes.enabled;
+  return true;
+}
+
+function renderRestoreMenus() {
+  for (const wrap of document.querySelectorAll('[data-restore-field]')) {
+    const field = wrap.dataset.restoreField;
+    const select = wrap.querySelector('select');
+    const html = renderRestoreOptions(submittedVersions, field, formatSubmittedTime);
+    wrap.hidden = !html || !isAssessmentMode() || !restoreFieldEnabled(field);
+    if (select.dataset.rendered === html) continue;
+    const chosen = select.value;
+    select.innerHTML = html;
+    select.dataset.rendered = html;
+    if ([...select.options].some((o) => o.value === chosen)) select.value = chosen;
+    wrap.querySelector('[data-restore-apply]').disabled = !select.value;
+  }
+}
+
+/**
+ * Put a field's text back as typed input, so counters, previews and saving
+ * behave exactly as if the candidate had typed it.
+ */
+function setRestorableText(field, text) {
+  const input = RESTORE_INPUTS[field];
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+for (const wrap of document.querySelectorAll('[data-restore-field]')) {
+  const field = wrap.dataset.restoreField;
+  const select = wrap.querySelector('select');
+  const applyBtn = wrap.querySelector('[data-restore-apply]');
+  const undoBtn = wrap.querySelector('[data-restore-undo]');
+  const status = wrap.querySelector('[data-restore-status]');
+  select.addEventListener('change', () => {
+    applyBtn.disabled = !select.value;
+  });
+  applyBtn.addEventListener('click', () => {
+    const version = submittedVersions.find((v) => v.submittedAt === select.value);
+    if (!version) return;
+    textBeforeRestore.set(field, RESTORE_INPUTS[field].value);
+    setRestorableText(field, version[field]);
+    undoBtn.hidden = false;
+    status.textContent = `Restored: ${select.selectedOptions[0]?.textContent ?? 'the chosen submission'}.`;
+  });
+  undoBtn.addEventListener('click', () => {
+    if (!textBeforeRestore.has(field)) return;
+    setRestorableText(field, textBeforeRestore.get(field));
+    textBeforeRestore.delete(field);
+    undoBtn.hidden = true;
+    status.textContent = 'Restore undone.';
+  });
+}
+
 function resolveSessionModel(savedModel) {
   if (!ALLOW_USER_MODEL_SELECTION) return CONFIG_MODEL;
   return findAllowedModel(savedModel, ALLOWED_MODELS)
@@ -1374,6 +1829,13 @@ function pullSessionFromDom() {
     ...(PROMPT_TEMPLATING.allowExamples ? { examples: session.examples } : {}),
     metricId: metricSelectEl.value,
     runs: clampRuns(runCountEl.value),
+    ...(isAssessmentMode()
+      ? {
+        stage: ASSESSMENT.stage,
+        customCheckCriteria: customCheckInput.value,
+        notes: notesInput.value,
+      }
+      : {}),
   }, sessionLimits());
   runCountEl.value = String(session.runs);
 }
@@ -1397,10 +1859,19 @@ function applySessionToDom() {
   }
   updateMetricHelp();
   runCountEl.value = String(clampRuns(session.runs));
+  if (isAssessmentMode()) {
+    customCheckInput.value = session.customCheckCriteria ?? '';
+    notesInput.value = session.notes ?? '';
+    updateCounter(notesCounter, notesInput.value, ASSESSMENT.notes.maxLength);
+    renderProvidedCasesList();
+    renderCalibrationPanel();
+  }
   renderCases();
   renderExamples();
   syncCompareModeUi();
   updateTemplatePreview();
+  updateMetricHelp();
+  updatePromptCounter();
 }
 
 function applyInitialSession(initial) {
@@ -1429,13 +1900,34 @@ function applyInitialSession(initial) {
     metricId: metricSelectEl.value,
     runs: clampRuns(runCountEl.value),
     lastResult: null,
+    ...(isAssessmentMode() ? { stage: ASSESSMENT.stage } : {}),
   }, sessionLimits());
 }
 
+const SAVE_RETRY_MS = 3000;
+let saveRetryTimer;
+let saveFailed = false;
+
+/** Tell the user when edits are not on the server yet; graders read only what is saved. */
+function showSaveState(ok) {
+  if (ok === !saveFailed) return;
+  saveFailed = !ok;
+  saveStatusEl.hidden = false;
+  saveStatusEl.classList.toggle('eval-save-status--failed', !ok);
+  saveStatusEl.textContent = ok
+    ? 'All changes saved.'
+    : 'Your latest changes are not saved yet. Retrying…';
+}
+
+/** @returns {Promise<boolean>} whether the server stored the session */
 async function persistSession() {
-  if (!persistEnabled) return;
+  if (!persistEnabled) return true;
   pullSessionFromDom();
   const snapshot = JSON.parse(JSON.stringify(session));
+  // The server keeps the results it produced, so saves carry only the
+  // editable work and stay small however large a run is.
+  delete snapshot.lastResult;
+  let ok = false;
   try {
     await enqueueSessionsWrite(async () => {
       const res = await fetch('api/eval/session', {
@@ -1443,6 +1935,7 @@ async function persistSession() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(snapshot),
       });
+      ok = res.ok;
       if (!res.ok) {
         console.error('[eval] Failed to persist session:', res.status);
       }
@@ -1450,6 +1943,10 @@ async function persistSession() {
   } catch (err) {
     console.error('[eval] Failed to persist session:', err);
   }
+  showSaveState(ok);
+  clearTimeout(saveRetryTimer);
+  if (!ok) saveRetryTimer = setTimeout(() => { void persistSession(); }, SAVE_RETRY_MS);
+  return ok;
 }
 
 function scheduleSave() {
@@ -1496,9 +1993,17 @@ async function init() {
   applyDefaults(config.defaults);
   configureFeatures(config);
   configureModelSelection(config);
+  configureAssessment(config);
+  let stageChanged = false;
   if (saved) {
     session = normalizeEvalSession(saved, sessionLimits());
     if (!ALLOW_COMPARE) session.compareMode = false;
+    if (isAssessmentMode() && session.stage !== ASSESSMENT.stage) {
+      stageChanged = Boolean(session.stage);
+      session.stage = ASSESSMENT.stage;
+      // Results from the previous level's cases (and check) would read as this level's.
+      session.lastResult = null;
+    }
     applySessionToDom();
     if (isRenderableResult(session.lastResult)) {
       renderComparison(session.lastResult);
@@ -1508,6 +2013,13 @@ async function init() {
     applySessionToDom();
   }
   persistEnabled = true;
+  if (stageChanged) {
+    stageBannerTitle.textContent = `New level: ${ASSESSMENT.stageLabel || ASSESSMENT.stage}`;
+    stageBanner.hidden = false;
+    persistSessionNow();
+  }
+  watchAssessmentStage();
+  void refreshSubmittedVersions();
 }
 
 enableCompareBtn.addEventListener('click', () => {
@@ -1615,7 +2127,7 @@ casesListEl.addEventListener('click', (event) => {
   const btn = event.target.closest('[data-remove]');
   if (!btn) return;
   syncCasesFromDom();
-  if (session.cases.length <= MIN_CASES) return;
+  if (session.cases.length <= minOwnCases()) return;
   session.cases = session.cases.filter((c) => c.id !== btn.getAttribute('data-remove'));
   collapsedCaseIds.delete(btn.getAttribute('data-remove'));
   renderCases();
@@ -1630,6 +2142,7 @@ casesListEl.addEventListener('input', () => {
 
 promptAEl.addEventListener('input', () => {
   session.promptA = promptAEl.value;
+  updatePromptCounter();
   if (PROMPT_TEMPLATING.dynamicFields) {
     syncCasesFromDom();
     renderCases();
@@ -1641,6 +2154,7 @@ promptAEl.addEventListener('input', () => {
 
 promptBEl.addEventListener('input', () => {
   session.promptB = promptBEl.value;
+  updatePromptCounter();
   if (PROMPT_TEMPLATING.dynamicFields) {
     syncCasesFromDom();
     renderCases();
@@ -1705,10 +2219,51 @@ runBtn.addEventListener('click', () => {
   void runEvaluation();
 });
 
+providedCasesList.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-include-case]');
+  if (!checkbox) return;
+  setCaseIncluded(checkbox.dataset.includeCase, checkbox.checked);
+  renderProvidedCasesList();
+  persistSessionNow();
+});
+
+casesListEl.addEventListener('change', (event) => {
+  const checkbox = event.target.closest('[data-include-case]');
+  if (!checkbox) return;
+  setCaseIncluded(checkbox.dataset.includeCase, checkbox.checked);
+  checkbox.closest('.eval-case')?.classList.toggle('eval-case--excluded', !checkbox.checked);
+  updateRunEstimate();
+  persistSessionNow();
+});
+
+customCheckInput.addEventListener('input', () => {
+  session.customCheckCriteria = customCheckInput.value;
+  renderCalibrationPanel();
+  updateMetricHelp();
+  scheduleSave();
+});
+
+calibrateBtn.addEventListener('click', () => {
+  void runCalibration();
+});
+
+notesInput.addEventListener('input', () => {
+  session.notes = notesInput.value;
+  updateCounter(notesCounter, notesInput.value, ASSESSMENT.notes.maxLength);
+  scheduleSave();
+});
+
+dismissStageBannerBtn.addEventListener('click', () => {
+  stageBanner.hidden = true;
+});
+
 runCountEl.addEventListener('change', () => {
   runCountEl.value = String(clampRuns(runCountEl.value));
   session.runs = clampRuns(runCountEl.value);
+  updateRunEstimate();
   persistSessionNow();
 });
+
+runCountEl.addEventListener('input', updateRunEstimate);
 
 void init();

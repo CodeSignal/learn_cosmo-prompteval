@@ -9,6 +9,10 @@ chat-config.json
 session.config.json
 eval-session.json
 .codesignal/report.md
+.codesignal/submission.json
+.codesignal/submission.md
+.codesignal/evaluations.jsonl
+.codesignal/submitted-versions.json
 .agent-build
 dist
 dist.tar.gz

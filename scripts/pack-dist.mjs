@@ -20,6 +20,24 @@ const ROOT = path.resolve(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const TAR = path.join(ROOT, 'dist.tar.gz');
 
+// Modules hidden assessment tests import by path (see README "Assessment
+// mode"). They are bundled to the same paths under dist/lib so a grader works
+// against a release exactly as against the source tree.
+const GRADING_ENTRIES = [
+  'lib/grading.js',
+  'lib/session-config.js',
+  'lib/llm/provider.js',
+  'lib/helpers.js',
+  'lib/copy-detection.js',
+  'lib/eval-compare.js',
+  'lib/metrics/index.js',
+  'lib/consistency.js',
+  'lib/custom-check-calibration.js',
+  'lib/submitted-versions.js',
+];
+
+const NODE_REQUIRE_BANNER = "import { createRequire } from 'module'; const require = createRequire(import.meta.url);";
+
 function copy(src, dest, filter) {
   fs.cpSync(src, dest, { recursive: true, filter });
 }
@@ -69,9 +87,23 @@ await esbuild.build({
   format: 'esm',
   platform: 'node',
   minify: true,
-  banner: {
-    js: "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
-  },
+  banner: { js: NODE_REQUIRE_BANNER },
+  logLevel: 'warning',
+});
+
+// Code splitting keeps one copy of shared modules (and their state) across
+// the grading entry points.
+await esbuild.build({
+  absWorkingDir: ROOT,
+  entryPoints: GRADING_ENTRIES,
+  outbase: 'lib',
+  outdir: 'dist/lib',
+  bundle: true,
+  splitting: true,
+  format: 'esm',
+  platform: 'node',
+  minify: true,
+  banner: { js: NODE_REQUIRE_BANNER },
   logLevel: 'warning',
 });
 
@@ -86,6 +118,11 @@ copy(path.join(ROOT, 'design-system'), path.join(DIST, 'design-system'), (src) =
 copy(
   path.join(ROOT, 'lib/eval-system-prompt.md'),
   path.join(DIST, 'eval-system-prompt.md'),
+);
+// The grading bundles' shared chunk sits in dist/lib and reads it from there.
+copy(
+  path.join(ROOT, 'lib/eval-system-prompt.md'),
+  path.join(DIST, 'lib/eval-system-prompt.md'),
 );
 copy(path.join(ROOT, '.env.example'), path.join(DIST, '.env.example'));
 copy(
@@ -117,6 +154,8 @@ for (const rel of [
   'public/index.html',
   'server.js',
   'eval-system-prompt.md',
+  'lib/eval-system-prompt.md',
+  ...GRADING_ENTRIES,
 ]) {
   if (!fs.existsSync(path.join(DIST, rel))) throw new Error(`missing ${rel} in dist/`);
 }
@@ -137,6 +176,25 @@ try {
   await new Promise((resolve) => server.close(resolve));
 }
 
+// Every grading module loads, and a prompt grades end to end (system prompt
+// file included) with a stub provider.
+for (const rel of GRADING_ENTRIES) {
+  await import(pathToFileURL(path.join(DIST, rel)).href);
+}
+{
+  const grading = await import(pathToFileURL(path.join(DIST, 'lib/grading.js')).href);
+  const [graded] = await grading.gradePrompt({
+    llm: { name: 'stub', model: 'stub', complete: async () => ({ text: 'Label: yes' }) },
+    promptA: 'Answer:\n{{input}}',
+    cases: [{ id: 'c1', input: 'x', expected: { Label: 'yes' } }],
+    runs: 1,
+    fields: ['Label'],
+  });
+  if (graded?.errors !== 0 || graded?.fieldAccuracy?.Label !== 1) {
+    throw new Error(`grading check failed: ${JSON.stringify(graded)}`);
+  }
+}
+
 if (fs.existsSync(TAR)) fs.unlinkSync(TAR);
 execFileSync('tar', ['-czf', TAR, '-C', DIST, '.'], { cwd: ROOT });
 
@@ -146,6 +204,7 @@ const entries = [
   'public',
   'design-system',
   'eval-system-prompt.md',
+  'lib',
 ];
 console.log('Packed dist/ (no node_modules):');
 for (const rel of entries) {

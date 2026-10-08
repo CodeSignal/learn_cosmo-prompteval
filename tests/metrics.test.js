@@ -23,6 +23,8 @@ describe('metric registry', () => {
       'regex-match',
       'valid-json',
       'llm-judge',
+      'field-match',
+      'custom-check',
     ]);
     expect(DEFAULT_METRIC_ID).toBe('exact-match');
   });

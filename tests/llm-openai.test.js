@@ -19,6 +19,7 @@ const {
   normalizeOpenAiModelId,
   normalizeDeepSeekModelId,
   extractCompletionText,
+  isUnsupportedTemperatureError,
   DEFAULT_OPENAI_MODEL,
 } = await import('../lib/llm/openai.js');
 const { createLlmProvider } = await import('../lib/llm/provider.js');
@@ -146,6 +147,145 @@ describe('createLlmProvider openai', () => {
       '[llm] error {"provider":"openai","model":"gpt-4o","message":"insufficient_quota","status":429,"code":"insufficient_quota","baseURL":"https://api.example.test/v1"}',
     );
     errorSpy.mockRestore();
+  });
+});
+
+describe('unsupported temperature', () => {
+  beforeEach(() => {
+    createMock.mockReset();
+  });
+
+  it('retries once without temperature when the model only allows the default', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = Object.assign(
+      new Error("400 Unsupported value: 'temperature' does not support 0 with this model. Only the default (1) value is supported."),
+      { status: 400 },
+    );
+    createMock
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce({ id: 'c1', choices: [{ message: { content: '0.9' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-5-mini');
+    const result = await llm.complete({
+      model: 'gpt-5-mini',
+      messages: [{ role: 'user', content: 'Judge' }],
+      temperature: 0,
+    });
+    expect(result.text).toBe('0.9');
+    expect(createMock).toHaveBeenCalledTimes(2);
+    expect(createMock.mock.calls[0][0].temperature).toBe(0);
+    expect(createMock.mock.calls[1][0]).not.toHaveProperty('temperature');
+    logSpy.mockRestore();
+  });
+
+  it('sends reasoning_effort only when requested', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    createMock.mockResolvedValue({ id: 'c1', choices: [{ message: { content: 'ok' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-5-nano');
+    await llm.complete({ model: 'gpt-5-nano', messages: [{ role: 'user', content: 'Hi' }], reasoningEffort: 'minimal' });
+    await llm.complete({ model: 'gpt-5-nano', messages: [{ role: 'user', content: 'Hi' }] });
+    expect(createMock.mock.calls[0][0].reasoning_effort).toBe('minimal');
+    expect(createMock.mock.calls[1][0]).not.toHaveProperty('reasoning_effort');
+    logSpy.mockRestore();
+  });
+
+  it('lists reasoning_effort in allowed_openai_params when a LiteLLM proxy asks for it', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = Object.assign(
+      new Error("400 litellm.UnsupportedParamsError: openai does not support parameters: ['reasoning_effort'], for model=gpt-6-luna. If you want to use these params dynamically send allowed_openai_params=['reasoning_effort'] in your request."),
+      { status: 400 },
+    );
+    createMock
+      .mockRejectedValueOnce(err)
+      .mockResolvedValue({ id: 'c2', choices: [{ message: { content: 'ok' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-6-luna');
+    const req = { model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hi' }], reasoningEffort: 'low' };
+    expect((await llm.complete(req)).text).toBe('ok');
+    expect(createMock.mock.calls[1][0]).toMatchObject({ reasoning_effort: 'low', allowed_openai_params: ['reasoning_effort'] });
+    // Remembered: the next request allows it up front, with no failed attempt.
+    await llm.complete(req);
+    expect(createMock).toHaveBeenCalledTimes(3);
+    expect(createMock.mock.calls[2][0]).toMatchObject({ allowed_openai_params: ['reasoning_effort'] });
+    logSpy.mockRestore();
+  });
+
+  it('remembers each allowed parameter and lists only those a request sends', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = Object.assign(
+      new Error("400 litellm.UnsupportedParamsError: openai does not support parameters: ['temperature'], for model=gpt-6-luna. If you want to use these params dynamically send allowed_openai_params=['temperature'] in your request."),
+      { status: 400 },
+    );
+    createMock
+      .mockRejectedValueOnce(err)
+      .mockResolvedValue({ id: 'c4', choices: [{ message: { content: 'ok' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-6-luna');
+    const base = { model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hi' }] };
+    await llm.complete({ ...base, temperature: 0 });
+    expect(createMock.mock.calls[1][0]).toMatchObject({ temperature: 0, allowed_openai_params: ['temperature'] });
+    await llm.complete({ ...base, temperature: 0, reasoningEffort: 'low' });
+    expect(createMock.mock.calls[2][0]).toMatchObject({ temperature: 0, allowed_openai_params: ['temperature'] });
+    await llm.complete({ ...base, reasoningEffort: 'low' });
+    expect(createMock.mock.calls[3][0]).not.toHaveProperty('allowed_openai_params');
+    expect(createMock).toHaveBeenCalledTimes(4);
+    logSpy.mockRestore();
+  });
+
+  it('adds a second rejected parameter to the allow list instead of dropping it', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const hint = (param) => Object.assign(
+      new Error(`400 litellm.UnsupportedParamsError: openai does not support parameters: ['${param}'], for model=gpt-6-luna. If you want to use these params dynamically send allowed_openai_params=['${param}'] in your request.`),
+      { status: 400 },
+    );
+    createMock
+      .mockRejectedValueOnce(hint('reasoning_effort'))
+      .mockRejectedValueOnce(hint('temperature'))
+      .mockResolvedValueOnce({ id: 'c5', choices: [{ message: { content: 'ok' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-6-luna');
+    await llm.complete({ model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hi' }], temperature: 0, reasoningEffort: 'low' });
+    expect(createMock.mock.calls[2][0]).toMatchObject({
+      temperature: 0,
+      reasoning_effort: 'low',
+      allowed_openai_params: ['reasoning_effort', 'temperature'],
+    });
+    logSpy.mockRestore();
+  });
+
+  it('keeps the rest of the allow list when it drops a parameter', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const hint = Object.assign(
+      new Error("400 litellm.UnsupportedParamsError: openai does not support parameters: ['reasoning_effort'], for model=gpt-6-luna. If you want to use these params dynamically send allowed_openai_params=['reasoning_effort'] in your request."),
+      { status: 400 },
+    );
+    const noTemperature = Object.assign(
+      new Error("400 Unsupported value: 'temperature' does not support 0 with this model. Only the default (1) value is supported."),
+      { status: 400 },
+    );
+    createMock
+      .mockRejectedValueOnce(hint)
+      .mockRejectedValueOnce(noTemperature)
+      .mockResolvedValueOnce({ id: 'c6', choices: [{ message: { content: 'ok' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-6-luna');
+    await llm.complete({ model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hi' }], temperature: 0, reasoningEffort: 'low' });
+    expect(createMock.mock.calls[2][0]).not.toHaveProperty('temperature');
+    expect(createMock.mock.calls[2][0]).toMatchObject({ reasoning_effort: 'low', allowed_openai_params: ['reasoning_effort'] });
+    logSpy.mockRestore();
+  });
+
+  it('drops a rejected optional parameter when the proxy gives no allow hint', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = Object.assign(new Error('400 Unrecognized request argument supplied: reasoning_effort'), { status: 400 });
+    createMock
+      .mockRejectedValueOnce(err)
+      .mockResolvedValueOnce({ id: 'c3', choices: [{ message: { content: 'ok' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-6-luna');
+    await llm.complete({ model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hi' }], reasoningEffort: 'low' });
+    expect(createMock.mock.calls[1][0]).not.toHaveProperty('reasoning_effort');
+    logSpy.mockRestore();
+  });
+
+  it('only matches 400 errors about temperature support', () => {
+    expect(isUnsupportedTemperatureError(Object.assign(new Error('temperature not supported'), { status: 400 }))).toBe(true);
+    expect(isUnsupportedTemperatureError(Object.assign(new Error('temperature not supported'), { status: 429 }))).toBe(false);
+    expect(isUnsupportedTemperatureError(Object.assign(new Error('Unsupported value: top_p'), { status: 400 }))).toBe(false);
   });
 });
 
