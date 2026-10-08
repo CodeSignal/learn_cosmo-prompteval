@@ -1924,9 +1924,9 @@ async function persistSession() {
   if (!persistEnabled) return true;
   pullSessionFromDom();
   const snapshot = JSON.parse(JSON.stringify(session));
-  // In assessments the server keeps the results it produced, so saves carry
-  // only the editable work and stay small however large a run is.
-  if (isAssessmentMode()) delete snapshot.lastResult;
+  // The server keeps the results it produced, so saves carry only the
+  // editable work and stay small however large a run is.
+  delete snapshot.lastResult;
   let ok = false;
   try {
     await enqueueSessionsWrite(async () => {

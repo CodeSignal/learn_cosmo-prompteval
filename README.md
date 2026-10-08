@@ -100,7 +100,7 @@ With `dynamicFields`, placeholders such as `{{context}}`, `{{input}}`, and `{{co
 
 Work-in-progress (prompts, cases, settings, and the last results) is stored in `eval-session.json`. That file is local and not checked in. A saved session wins over `initialSession` on reload.
 
-After each evaluation run, the server appends a numbered `Evaluation` section to `.codesignal/report.md`. The report keeps all evaluations from the current workspace, including each evaluation's setup, overall scores, cases, and individual runs. That file is gitignored.
+The server stores each evaluation's results in `eval-session.json` itself; the page's autosave sends only the editable work (prompts, cases, settings), so saves stay small however large a run is, and a failed save shows a "not saved yet, retrying" notice. After each evaluation run, the server appends a numbered `Evaluation` section to `.codesignal/report.md`. The report keeps all evaluations from the current workspace, including each evaluation's setup, overall scores, cases, and individual runs. That file is gitignored.
 
 ### Assessment mode
 
