@@ -156,6 +156,10 @@ Graded assessments turn on an `assessment` block. Without it, every Course behav
 
 `lib/grading.js` re-runs a saved prompt or custom check on hidden data the same way the simulator scores it. It builds on `lib/eval-compare.js`, `lib/metrics`, `lib/consistency.js`, and `lib/custom-check-calibration.js`, which are importable too.
 
+**Restoring submitted work.** A task's hidden tests can call `recordSubmittedWork` (`lib/submitted-versions.js`) to save the scored fields (prompt, custom check criteria, notes) to `.codesignal/submitted-versions.json`. The simulator then shows a "Restore a submitted …" menu under each of those fields, like restoring a coding submission, with Undo.
+
+> **Unusual but deliberate: the submit hook lives in the hidden tests, not in `main.sh`.** On CodeSignal, **Submit** runs the test runner inside the live workspace with the hidden files readable for that run only. **Run** executes `main.sh` with the hidden files moved away. So code in the hidden tests runs on Submit only, while a hook in `main.sh` would fire on every Run click and never on Submit. Keep the hook out of `it()` blocks so it never counts as a test.
+
 **Progressive tasks.** Ship a different read-only `session.config.json` per level with a new `stage`. The candidate's `eval-session.json` carries over (prompt, own cases, criteria, notes). Provided cases and materials always come from the current level's config. The page polls `GET /api/assessment/stage` and reloads when the level changes, and the first load of a new level shows a "New level" banner.
 
 ## Run
@@ -182,8 +186,8 @@ files the server serves. Extract `dist.tar.gz` and run `node server.js`. Supply
 The release also bundles the grading modules (`lib/grading.js`,
 `lib/session-config.js`, `lib/llm/provider.js`, `lib/helpers.js`,
 `lib/copy-detection.js`, `lib/eval-compare.js`, `lib/metrics/index.js`,
-`lib/consistency.js`, `lib/custom-check-calibration.js`) at their source paths
-under `lib/`. Hidden assessment tests import them by path, so they work against
+`lib/consistency.js`, `lib/custom-check-calibration.js`, `lib/submitted-versions.js`) at their source
+paths under `lib/`. Hidden assessment tests import them by path, so they work against
 a release the same way as against the source tree. `npm run pack` checks that
 each one loads and that a prompt grades end to end.
 

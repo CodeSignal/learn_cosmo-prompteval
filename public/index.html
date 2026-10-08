@@ -101,6 +101,16 @@
 
           <p class="body-xxsmall eval-counter" id="promptCounter" hidden></p>
 
+          <div class="eval-restore" id="promptRestore" data-restore-field="prompt" hidden>
+          <label class="body-xxsmall eval-field__label" for="promptRestoreSelect">Restore a submitted prompt</label>
+          <div class="eval-inline-actions">
+            <select class="input eval-restore__select" id="promptRestoreSelect"></select>
+            <button type="button" class="button button-secondary" data-restore-apply disabled>Restore</button>
+            <button type="button" class="button button-tertiary" data-restore-undo hidden>Undo</button>
+          </div>
+          <p class="body-xxsmall eval-status" data-restore-status role="status" aria-live="polite"></p>
+        </div>
+
           <div class="eval-prompt-b" id="promptBWrap" hidden>
             <label class="eval-field">
               <span class="body-xsmall eval-field__label" id="promptBLabel">Prompt B</span>
@@ -355,6 +365,15 @@
           <textarea class="input" id="customCheckInput" rows="7" spellcheck="true"></textarea>
         </label>
         <p class="body-xxsmall eval-counter" id="customCheckCounter"></p>
+        <div class="eval-restore" id="customCheckRestore" data-restore-field="customCheckCriteria" hidden>
+          <label class="body-xxsmall eval-field__label" for="customCheckRestoreSelect">Restore submitted criteria</label>
+          <div class="eval-inline-actions">
+            <select class="input eval-restore__select" id="customCheckRestoreSelect"></select>
+            <button type="button" class="button button-secondary" data-restore-apply disabled>Restore</button>
+            <button type="button" class="button button-tertiary" data-restore-undo hidden>Undo</button>
+          </div>
+          <p class="body-xxsmall eval-status" data-restore-status role="status" aria-live="polite"></p>
+        </div>
         <div class="eval-inline-actions">
           <button type="button" class="button button-secondary" id="calibrateBtn">Test my check on reviewer samples</button>
           <p class="body-xxsmall eval-status" id="calibrateStatus" role="status" aria-live="polite"></p>
@@ -397,6 +416,15 @@
         <h2 class="heading-xsmall" id="notesHeading">Notes</h2>
         <textarea class="input" id="notesInput" rows="8" spellcheck="true"></textarea>
         <p class="body-xxsmall eval-counter" id="notesCounter"></p>
+        <div class="eval-restore" id="notesRestore" data-restore-field="notes" hidden>
+          <label class="body-xxsmall eval-field__label" for="notesRestoreSelect">Restore submitted notes</label>
+          <div class="eval-inline-actions">
+            <select class="input eval-restore__select" id="notesRestoreSelect"></select>
+            <button type="button" class="button button-secondary" data-restore-apply disabled>Restore</button>
+            <button type="button" class="button button-tertiary" data-restore-undo hidden>Undo</button>
+          </div>
+          <p class="body-xxsmall eval-status" data-restore-status role="status" aria-live="polite"></p>
+        </div>
       </section>
     </main>
   </div>

@@ -33,6 +33,7 @@ const GRADING_ENTRIES = [
   'lib/metrics/index.js',
   'lib/consistency.js',
   'lib/custom-check-calibration.js',
+  'lib/submitted-versions.js',
 ];
 
 const NODE_REQUIRE_BANNER = "import { createRequire } from 'module'; const require = createRequire(import.meta.url);";

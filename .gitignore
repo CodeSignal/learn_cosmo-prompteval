@@ -12,6 +12,7 @@ eval-session.json
 .codesignal/submission.json
 .codesignal/submission.md
 .codesignal/evaluations.jsonl
+.codesignal/submitted-versions.json
 .agent-build
 dist
 dist.tar.gz

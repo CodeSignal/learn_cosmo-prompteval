@@ -19,6 +19,7 @@ import {
   renderMaterials,
   renderOverallConsistency,
   renderProvidedCases,
+  renderRestoreOptions,
 } from './assessment-view.js';
 import {
   DEFAULT_ASSESSMENT,
@@ -1693,6 +1694,7 @@ function configureAssessment(config) {
 function watchAssessmentStage() {
   if (!isAssessmentMode()) return;
   setInterval(async () => {
+    void refreshSubmittedVersions();
     if (isBusy || isCalibrating) return;
     try {
       const res = await fetch('api/assessment/stage');
@@ -1705,6 +1707,94 @@ function watchAssessmentStage() {
       // Offline or restarting; try again on the next tick.
     }
   }, STAGE_POLL_MS);
+}
+
+/** Work saved on each Submit, newest first (see lib/submitted-versions.js). */
+let submittedVersions = [];
+/** Field text before the last restore, for Undo. */
+const textBeforeRestore = new Map();
+
+const RESTORE_INPUTS = {
+  prompt: promptAEl,
+  customCheckCriteria: customCheckInput,
+  notes: notesInput,
+};
+
+function formatSubmittedTime(iso) {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime())
+    ? iso
+    : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+async function refreshSubmittedVersions() {
+  if (!isAssessmentMode()) return;
+  try {
+    const res = await fetch('api/assessment/submitted-versions');
+    if (!res.ok) return;
+    const data = await res.json();
+    submittedVersions = Array.isArray(data.versions) ? data.versions : [];
+  } catch {
+    return;
+  }
+  renderRestoreMenus();
+}
+
+function restoreFieldEnabled(field) {
+  if (field === 'customCheckCriteria') return ASSESSMENT.customCheck.enabled;
+  if (field === 'notes') return ASSESSMENT.notes.enabled;
+  return true;
+}
+
+function renderRestoreMenus() {
+  for (const wrap of document.querySelectorAll('[data-restore-field]')) {
+    const field = wrap.dataset.restoreField;
+    const select = wrap.querySelector('select');
+    const html = renderRestoreOptions(submittedVersions, field, formatSubmittedTime);
+    wrap.hidden = !html || !isAssessmentMode() || !restoreFieldEnabled(field);
+    if (select.dataset.rendered === html) continue;
+    const chosen = select.value;
+    select.innerHTML = html;
+    select.dataset.rendered = html;
+    if ([...select.options].some((o) => o.value === chosen)) select.value = chosen;
+    wrap.querySelector('[data-restore-apply]').disabled = !select.value;
+  }
+}
+
+/**
+ * Put a field's text back as typed input, so counters, previews and saving
+ * behave exactly as if the candidate had typed it.
+ */
+function setRestorableText(field, text) {
+  const input = RESTORE_INPUTS[field];
+  input.value = text;
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+for (const wrap of document.querySelectorAll('[data-restore-field]')) {
+  const field = wrap.dataset.restoreField;
+  const select = wrap.querySelector('select');
+  const applyBtn = wrap.querySelector('[data-restore-apply]');
+  const undoBtn = wrap.querySelector('[data-restore-undo]');
+  const status = wrap.querySelector('[data-restore-status]');
+  select.addEventListener('change', () => {
+    applyBtn.disabled = !select.value;
+  });
+  applyBtn.addEventListener('click', () => {
+    const version = submittedVersions.find((v) => v.submittedAt === select.value);
+    if (!version) return;
+    textBeforeRestore.set(field, RESTORE_INPUTS[field].value);
+    setRestorableText(field, version[field]);
+    undoBtn.hidden = false;
+    status.textContent = `Restored: ${select.selectedOptions[0]?.textContent ?? 'the chosen submission'}.`;
+  });
+  undoBtn.addEventListener('click', () => {
+    if (!textBeforeRestore.has(field)) return;
+    setRestorableText(field, textBeforeRestore.get(field));
+    textBeforeRestore.delete(field);
+    undoBtn.hidden = true;
+    status.textContent = 'Restore undone.';
+  });
 }
 
 function resolveSessionModel(savedModel) {
@@ -1893,6 +1983,7 @@ async function init() {
     persistSessionNow();
   }
   watchAssessmentStage();
+  void refreshSubmittedVersions();
 }
 
 enableCompareBtn.addEventListener('click', () => {

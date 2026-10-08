@@ -310,3 +310,24 @@ describe('GET /api/assessment/stage', () => {
     expect(res.body).toEqual({ enabled: true, stage: 'l2' });
   });
 });
+
+describe('GET /api/assessment/submitted-versions', () => {
+  it('lists submitted versions newest first', async () => {
+    mockFiles(ASSESSMENT_CONFIG, {
+      'submitted-versions.json': JSON.stringify({
+        version: 1,
+        versions: [
+          { submittedAt: '2026-10-08T10:00:00.000Z', stage: 'l1', stageLabel: 'Level 1 of 3', prompt: 'P1', customCheckCriteria: '', notes: '' },
+          { submittedAt: '2026-10-08T10:30:00.000Z', stage: 'l2', stageLabel: 'Level 2 of 3', prompt: 'P2', customCheckCriteria: 'C2', notes: '' },
+        ],
+      }),
+    });
+    const res = await request(app).get('/api/assessment/submitted-versions');
+    expect(res.body.versions.map((v) => v.prompt)).toEqual(['P2', 'P1']);
+  });
+
+  it('returns nothing outside assessment mode', async () => {
+    mockFiles({}, { 'submitted-versions.json': JSON.stringify({ versions: [{ submittedAt: 'T', prompt: 'P' }] }) });
+    expect((await request(app).get('/api/assessment/submitted-versions')).body).toEqual({ versions: [] });
+  });
+});

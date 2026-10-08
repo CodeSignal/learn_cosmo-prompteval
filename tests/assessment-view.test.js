@@ -4,6 +4,7 @@ import {
   renderCaseConsistency,
   renderMarkdownLite,
   renderOverallConsistency,
+  renderRestoreOptions,
 } from '../public/assessment-view.js';
 
 describe('renderMarkdownLite', () => {
@@ -56,5 +57,27 @@ describe('assessment result markup', () => {
     expect(html).toContain('You changed the criteria since this test');
     expect(html).toContain('Disagrees');
     expect(renderCalibration(samples, calibration, 'old')).not.toContain('You changed the criteria');
+  });
+});
+
+describe('renderRestoreOptions', () => {
+  const versions = [
+    { submittedAt: 'T2', stage: 'level-2', stageLabel: 'Level 2 of 3 · Build a check', prompt: 'P2', customCheckCriteria: 'C <2>', notes: '' },
+    { submittedAt: 'T1', stage: 'level-1', stageLabel: '', prompt: 'P1', customCheckCriteria: '', notes: '' },
+  ];
+  const time = (iso) => `at ${iso}`;
+
+  it('lists the versions that have the field, labelled by level and time', () => {
+    expect(renderRestoreOptions(versions, 'prompt', time)).toBe(
+      '<option value="">Choose a submission…</option>'
+      + '<option value="T2">Level 2 of 3 · submitted at T2</option>'
+      + '<option value="T1">level-1 · submitted at T1</option>',
+    );
+    expect(renderRestoreOptions(versions, 'customCheckCriteria', time)).not.toContain('T1');
+  });
+
+  it('is empty when no version has the field', () => {
+    expect(renderRestoreOptions(versions, 'notes', time)).toBe('');
+    expect(renderRestoreOptions([], 'prompt', time)).toBe('');
   });
 });

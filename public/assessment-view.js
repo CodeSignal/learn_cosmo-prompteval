@@ -226,3 +226,22 @@ export function renderCaseConsistency(consistency) {
   const tone = consistency.agreeing === consistency.runs ? 'yes' : 'no';
   return `<span class="eval-agree eval-agree--${tone}">${consistency.agreeing}/${consistency.runs} runs agree${consistency.distinct > 1 ? ` · ${consistency.distinct} different answers` : ''}</span>`;
 }
+
+/**
+ * Options for a "restore a submitted version" menu: the submitted versions
+ * (newest first) that have this field filled in. Empty when there are none.
+ * @param {Array<Record<string, string>>} versions newest first
+ * @param {'prompt' | 'customCheckCriteria' | 'notes'} field
+ * @param {(iso: string) => string} formatTime
+ * @returns {string}
+ */
+export function renderRestoreOptions(versions, field, formatTime) {
+  const options = versions
+    .filter((v) => String(v[field] ?? '').trim())
+    .map((v) => {
+      const level = String(v.stageLabel ?? '').split(' · ')[0].trim() || v.stage || 'An earlier level';
+      return `<option value="${escapeHtml(v.submittedAt)}">${escapeHtml(`${level} · submitted ${formatTime(v.submittedAt)}`)}</option>`;
+    });
+  if (options.length === 0) return '';
+  return `<option value="">Choose a submission…</option>${options.join('')}`;
+}

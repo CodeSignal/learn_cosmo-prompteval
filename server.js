@@ -28,6 +28,7 @@ import {
   writeSubmissionFiles,
 } from './lib/assessment-store.js';
 import { runCustomCheckCalibration } from './lib/custom-check-calibration.js';
+import { readSubmittedVersions } from './lib/submitted-versions.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_CONFIG_FILE = path.join(__dirname, 'session.config.json');
@@ -259,6 +260,14 @@ app.put('/api/eval/session', async (req, res) => {
 app.get('/api/assessment/stage', async (_req, res) => {
   const { assessment } = await sessionLlmConfig();
   res.json({ enabled: assessment.enabled, stage: assessment.stage });
+});
+
+// Work saved on each Submit (newest first), for the restore menus.
+app.get('/api/assessment/submitted-versions', async (_req, res) => {
+  const { assessment } = await sessionLlmConfig();
+  if (!assessment.enabled) return res.json({ versions: [] });
+  const versions = await readSubmittedVersions(ASSESSMENT_FILES.submittedVersions);
+  res.json({ versions: versions.reverse() });
 });
 
 // ── POST /api/check/calibrate ─────────────────────────────────
