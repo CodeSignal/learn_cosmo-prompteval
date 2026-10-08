@@ -59,6 +59,7 @@ const templatePreview = document.getElementById('templatePreview');
 const setupHeading = document.getElementById('setupHeading');
 const headerLede = document.getElementById('headerLede');
 const headerEyebrow = document.getElementById('headerEyebrow');
+const saveStatusEl = document.getElementById('saveStatus');
 const brandAvatar = document.getElementById('brandAvatar');
 const resultsEmptyCopy = document.getElementById('resultsEmptyCopy');
 const compareToggleRow = document.getElementById('compareToggleRow');
@@ -1708,7 +1709,8 @@ function watchAssessmentStage() {
       const data = await res.json();
       if (!data.enabled || data.stage === ASSESSMENT.stage) return;
       clearTimeout(saveTimer);
-      await persistSession();
+      // Reloading with unsaved edits would lose them; try again next tick.
+      if (!(await persistSession())) return;
       window.location.reload();
     } catch {
       // Offline or restarting; try again on the next tick.
@@ -1902,10 +1904,30 @@ function applyInitialSession(initial) {
   }, sessionLimits());
 }
 
+const SAVE_RETRY_MS = 3000;
+let saveRetryTimer;
+let saveFailed = false;
+
+/** Tell the user when edits are not on the server yet; graders read only what is saved. */
+function showSaveState(ok) {
+  if (ok === !saveFailed) return;
+  saveFailed = !ok;
+  saveStatusEl.hidden = false;
+  saveStatusEl.classList.toggle('eval-save-status--failed', !ok);
+  saveStatusEl.textContent = ok
+    ? 'All changes saved.'
+    : 'Your latest changes are not saved yet. Retrying…';
+}
+
+/** @returns {Promise<boolean>} whether the server stored the session */
 async function persistSession() {
-  if (!persistEnabled) return;
+  if (!persistEnabled) return true;
   pullSessionFromDom();
   const snapshot = JSON.parse(JSON.stringify(session));
+  // In assessments the server keeps the results it produced, so saves carry
+  // only the editable work and stay small however large a run is.
+  if (isAssessmentMode()) delete snapshot.lastResult;
+  let ok = false;
   try {
     await enqueueSessionsWrite(async () => {
       const res = await fetch('api/eval/session', {
@@ -1913,6 +1935,7 @@ async function persistSession() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(snapshot),
       });
+      ok = res.ok;
       if (!res.ok) {
         console.error('[eval] Failed to persist session:', res.status);
       }
@@ -1920,6 +1943,10 @@ async function persistSession() {
   } catch (err) {
     console.error('[eval] Failed to persist session:', err);
   }
+  showSaveState(ok);
+  clearTimeout(saveRetryTimer);
+  if (!ok) saveRetryTimer = setTimeout(() => { void persistSession(); }, SAVE_RETRY_MS);
+  return ok;
 }
 
 function scheduleSave() {

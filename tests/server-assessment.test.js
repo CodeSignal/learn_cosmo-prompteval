@@ -215,6 +215,15 @@ describe('POST /api/eval/compare in assessment mode', () => {
     ]);
     expect(String(writesTo('submission.md').at(-1)[1])).toContain('## Evaluation history (1)');
   });
+
+  it('stores the result in the saved session so autosave does not have to send it', async () => {
+    mockFiles(ASSESSMENT_CONFIG, { 'eval-session.json': JSON.stringify({ promptA: 'Label: {{input}}', stage: 'l2' }) });
+    await request(app).post('/api/eval/compare').send({ promptA: 'Label: {{input}}', runs: 1, metricId: 'field-match' });
+    expect(JSON.parse(writesTo('eval-session.json').at(-1)[1])).toMatchObject({
+      promptA: 'Label: {{input}}',
+      lastResult: { prompts: [{ id: 'A' }] },
+    });
+  });
 });
 
 describe('PUT /api/eval/session in assessment mode', () => {
@@ -241,6 +250,32 @@ describe('PUT /api/eval/session in assessment mode', () => {
       candidateCases: [{ id: 'c1', input: 'x', expectedAnswer: 'Diet: NONE' }],
       history: { evaluations: [{ n: 1 }] },
     });
+  });
+
+  it('keeps the results the server stored when the page saves only its edits', async () => {
+    mockFiles(ASSESSMENT_CONFIG, {
+      'eval-session.json': JSON.stringify({ promptA: 'Old', stage: 'l2', lastResult: { runId: 'r1' } }),
+    });
+    await request(app).put('/api/eval/session').send({ promptA: 'New', stage: 'l2' });
+    expect(JSON.parse(writesTo('eval-session.json').at(-1)[1])).toMatchObject({ promptA: 'New', lastResult: { runId: 'r1' } });
+  });
+
+  it('drops stored results from another level, and an explicit null clears them', async () => {
+    mockFiles(ASSESSMENT_CONFIG, {
+      'eval-session.json': JSON.stringify({ promptA: 'Old', stage: 'l1', lastResult: { runId: 'r1' } }),
+    });
+    await request(app).put('/api/eval/session').send({ promptA: 'New', stage: 'l2' });
+    expect(JSON.parse(writesTo('eval-session.json').at(-1)[1]).lastResult).toBeNull();
+    mockFiles(ASSESSMENT_CONFIG, {
+      'eval-session.json': JSON.stringify({ promptA: 'Old', stage: 'l2', lastResult: { runId: 'r1' } }),
+    });
+    await request(app).put('/api/eval/session').send({ promptA: 'New', stage: 'l2', lastResult: null });
+    expect(JSON.parse(writesTo('eval-session.json').at(-1)[1]).lastResult).toBeNull();
+  });
+
+  it('accepts sessions far larger than 100 KB', async () => {
+    const res = await request(app).put('/api/eval/session').send({ promptA: 'P', notes: 'x'.repeat(150_000) });
+    expect(res.status).toBe(200);
   });
 
   it('does not write submission files outside assessment mode', async () => {

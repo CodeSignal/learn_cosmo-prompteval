@@ -197,7 +197,9 @@ export function resetLlmCache() {
 }
 
 // ── Middleware ────────────────────────────────────────────────
-app.use(express.json());
+// Sessions carry prompts, cases and (outside assessments) the last results;
+// the default 100 KB is too small for long prompts run on many cases.
+app.use(express.json({ limit: '5mb' }));
 app.use('/design-system', express.static(path.join(__dirname, 'design-system')));
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -241,8 +243,17 @@ app.get('/api/eval/session', async (_req, res) => {
 app.put('/api/eval/session', async (req, res) => {
   try {
     const config = await sessionLlmConfig();
-    const session = normalizeEvalSession(req.body, sessionLimits(config));
+    let session = normalizeEvalSession(req.body, sessionLimits(config));
     await enqueueSessionsWrite(async () => {
+      // In assessments the page saves only the editable work; the server keeps
+      // the results it produced, unless the level has changed since.
+      const sendsResult = req.body && typeof req.body === 'object' && 'lastResult' in req.body;
+      if (config.assessment.enabled && !sendsResult) {
+        const stored = await readJsonFile(EVAL_SESSION_FILE, null);
+        if (stored?.lastResult && stored.stage === session.stage) {
+          session = normalizeEvalSession({ ...session, lastResult: stored.lastResult }, sessionLimits(config));
+        }
+      }
       await writeJsonFileAtomic(EVAL_SESSION_FILE, session);
     }, evalSessionWrite);
     if (config.assessment.enabled) {
@@ -559,6 +570,15 @@ app.post('/api/eval/compare', async (req, res) => {
           result,
         },
       );
+    }
+    if (assessment.enabled) {
+      // Keep the results server-side so the page's autosave stays small.
+      await enqueueSessionsWrite(async () => {
+        const stored = await readJsonFile(EVAL_SESSION_FILE, null);
+        if (stored && typeof stored === 'object') {
+          await writeJsonFileAtomic(EVAL_SESSION_FILE, { ...stored, lastResult: result });
+        }
+      }, evalSessionWrite);
     }
     if (sendEvent) {
       sendEvent('result', result);

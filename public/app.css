@@ -1386,6 +1386,15 @@ select.input {
   color: var(--Colors-Text-Body-Light);
 }
 
+.eval-save-status {
+  margin: 0;
+  color: var(--Colors-Text-Body-Light);
+}
+
+.eval-save-status--failed {
+  color: var(--Colors-Base-Accent-Red-700, #b8062c);
+}
+
 .eval-restore {
   display: flex;
   flex-direction: column;
