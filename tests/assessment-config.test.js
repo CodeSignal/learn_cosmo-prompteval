@@ -37,6 +37,9 @@ describe('normalizeAssessmentConfig', () => {
       reasoningEffort: 'minimal',
     });
     expect(result.stage).toBe('l2');
+    expect(result.eyebrow).toBe('');
+    expect(normalizeAssessmentConfig({ enabled: true, eyebrow: ' Harbor & Hearth · Menu label pilot ' }).eyebrow)
+      .toBe('Harbor & Hearth · Menu label pilot');
     expect(result.materials).toEqual([
       { id: 'material-1', title: 'Kitchen memo', body: 'Coconut is not a tree nut.' },
     ]);

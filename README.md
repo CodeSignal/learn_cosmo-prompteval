@@ -109,6 +109,7 @@ Graded assessments turn on an `assessment` block. Without it, every Course behav
 - **Limits are higher.** `defaults.maxRuns` can go up to 10 and `defaults.maxCases` up to 20 cases per evaluation. The server enforces the configured run and case ranges in every mode.
 - **Provided cases are locked.** `providedCases` are served from the config, merged in by the server before the candidate's own cases, and never stored in `eval-session.json`. The candidate can untick a case to leave it out of a run but cannot change it.
 - **Reference material is built in.** `materials` show in a Reference panel, for example a policy memo the prompt must follow.
+- **The header reads as the client's product.** The course mascot and branding are hidden; `eyebrow` sets the small line above the title (for example "Harbor & Hearth · Menu label pilot"), and a new level starts with an empty Results panel.
 - **Two metrics are added:**
   - `field-match` scores only the labeled `Label: value` lines written in Expected Answer.
   - `custom-check` has the fixed judge (`llmJudgeModel`) apply the candidate's own plain-English pass/fail criteria and give a one-sentence reason.

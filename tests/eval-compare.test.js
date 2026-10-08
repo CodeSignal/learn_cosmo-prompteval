@@ -68,6 +68,18 @@ describe('normalizeCases', () => {
     ]);
   });
 
+  it('keeps the provided flag so reports can tell provided cases from own ones', () => {
+    expect(normalizeCases({
+      cases: [
+        { id: 'p1', label: 'Tricky dish 1', input: 'fries', provided: true },
+        { id: 'own-1', label: 'Mine', input: 'soup', provided: 'yes' },
+      ],
+    })).toEqual([
+      { id: 'p1', label: 'Tricky dish 1', input: 'fries', expectedAnswer: '', provided: true },
+      { id: 'own-1', label: 'Mine', input: 'soup', expectedAnswer: '' },
+    ]);
+  });
+
   it('rejects too many cases', () => {
     const cases = Array.from({ length: MAX_EVAL_CASES + 1 }, (_, i) => ({ input: String(i) }));
     expect(() => normalizeCases({ cases })).toThrow(/At most/);

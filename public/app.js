@@ -58,6 +58,8 @@ const previewWarning = document.getElementById('previewWarning');
 const templatePreview = document.getElementById('templatePreview');
 const setupHeading = document.getElementById('setupHeading');
 const headerLede = document.getElementById('headerLede');
+const headerEyebrow = document.getElementById('headerEyebrow');
+const brandAvatar = document.getElementById('brandAvatar');
 const resultsEmptyCopy = document.getElementById('resultsEmptyCopy');
 const compareToggleRow = document.getElementById('compareToggleRow');
 const enableCompareBtn = document.getElementById('enableCompareBtn');
@@ -1672,6 +1674,11 @@ function configureAssessment(config) {
   notesPanel.hidden = !on || !ASSESSMENT.notes.enabled;
   if (!on) return;
 
+  // Assessments read as the client's own tool: no course branding.
+  brandAvatar.hidden = true;
+  headerEyebrow.hidden = !ASSESSMENT.eyebrow;
+  headerEyebrow.textContent = ASSESSMENT.eyebrow;
+
   const ownAllowed = ASSESSMENT.allowCandidateCases;
   ownCasesTitle.hidden = !ownAllowed;
   ownCasesHint.hidden = !ownAllowed;
@@ -1967,6 +1974,8 @@ async function init() {
     if (isAssessmentMode() && session.stage !== ASSESSMENT.stage) {
       stageChanged = Boolean(session.stage);
       session.stage = ASSESSMENT.stage;
+      // Results from the previous level's cases (and check) would read as this level's.
+      session.lastResult = null;
     }
     applySessionToDom();
     if (isRenderableResult(session.lastResult)) {
