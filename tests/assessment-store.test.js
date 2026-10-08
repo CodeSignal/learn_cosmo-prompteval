@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import {
+  assessmentPaths,
   buildSubmission,
   buildSubmissionMarkdown,
   summarizeCalibration,
@@ -7,6 +11,7 @@ import {
   summarizeLatestEvaluation,
   textVersion,
   withHistoryRow,
+  writeSubmissionFiles,
 } from '../lib/assessment-store.js';
 import { normalizeSessionConfig } from '../lib/session-config.js';
 import { normalizeEvalSession } from '../lib/eval-session.js';
@@ -121,5 +126,16 @@ describe('assessment submission', () => {
     expect(markdown).toContain('## Custom check criteria');
     expect(markdown).toContain('## Copied from the reference material');
     expect(markdown).toContain('**Copy/paste of the reference material: NO**');
+  });
+
+  it('survives overlapping writes without sharing a temp file', async () => {
+    const paths = assessmentPaths(await fs.mkdtemp(path.join(os.tmpdir(), 'assessment-store-')));
+    const first = buildSubmission({ config, session, updatedAt: 'T1' });
+    const second = buildSubmission({ config, session: { ...session, notes: 'Second save.' }, updatedAt: 'T2' });
+    await Promise.all([writeSubmissionFiles(paths, first), writeSubmissionFiles(paths, second)]);
+    const saved = JSON.parse(await fs.readFile(paths.submissionJson, 'utf8'));
+    expect(['T1', 'T2']).toContain(saved.updatedAt);
+    expect(await fs.readFile(paths.submissionMd, 'utf8')).toMatch(/^# /u);
+    expect((await fs.readdir(paths.dir)).filter((name) => name.endsWith('.tmp'))).toEqual([]);
   });
 });

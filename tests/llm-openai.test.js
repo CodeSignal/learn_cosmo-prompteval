@@ -208,6 +208,68 @@ describe('unsupported temperature', () => {
     logSpy.mockRestore();
   });
 
+  it('remembers each allowed parameter and lists only those a request sends', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = Object.assign(
+      new Error("400 litellm.UnsupportedParamsError: openai does not support parameters: ['temperature'], for model=gpt-6-luna. If you want to use these params dynamically send allowed_openai_params=['temperature'] in your request."),
+      { status: 400 },
+    );
+    createMock
+      .mockRejectedValueOnce(err)
+      .mockResolvedValue({ id: 'c4', choices: [{ message: { content: 'ok' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-6-luna');
+    const base = { model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hi' }] };
+    await llm.complete({ ...base, temperature: 0 });
+    expect(createMock.mock.calls[1][0]).toMatchObject({ temperature: 0, allowed_openai_params: ['temperature'] });
+    await llm.complete({ ...base, temperature: 0, reasoningEffort: 'low' });
+    expect(createMock.mock.calls[2][0]).toMatchObject({ temperature: 0, allowed_openai_params: ['temperature'] });
+    await llm.complete({ ...base, reasoningEffort: 'low' });
+    expect(createMock.mock.calls[3][0]).not.toHaveProperty('allowed_openai_params');
+    expect(createMock).toHaveBeenCalledTimes(4);
+    logSpy.mockRestore();
+  });
+
+  it('adds a second rejected parameter to the allow list instead of dropping it', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const hint = (param) => Object.assign(
+      new Error(`400 litellm.UnsupportedParamsError: openai does not support parameters: ['${param}'], for model=gpt-6-luna. If you want to use these params dynamically send allowed_openai_params=['${param}'] in your request.`),
+      { status: 400 },
+    );
+    createMock
+      .mockRejectedValueOnce(hint('reasoning_effort'))
+      .mockRejectedValueOnce(hint('temperature'))
+      .mockResolvedValueOnce({ id: 'c5', choices: [{ message: { content: 'ok' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-6-luna');
+    await llm.complete({ model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hi' }], temperature: 0, reasoningEffort: 'low' });
+    expect(createMock.mock.calls[2][0]).toMatchObject({
+      temperature: 0,
+      reasoning_effort: 'low',
+      allowed_openai_params: ['reasoning_effort', 'temperature'],
+    });
+    logSpy.mockRestore();
+  });
+
+  it('keeps the rest of the allow list when it drops a parameter', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const hint = Object.assign(
+      new Error("400 litellm.UnsupportedParamsError: openai does not support parameters: ['reasoning_effort'], for model=gpt-6-luna. If you want to use these params dynamically send allowed_openai_params=['reasoning_effort'] in your request."),
+      { status: 400 },
+    );
+    const noTemperature = Object.assign(
+      new Error("400 Unsupported value: 'temperature' does not support 0 with this model. Only the default (1) value is supported."),
+      { status: 400 },
+    );
+    createMock
+      .mockRejectedValueOnce(hint)
+      .mockRejectedValueOnce(noTemperature)
+      .mockResolvedValueOnce({ id: 'c6', choices: [{ message: { content: 'ok' } }] });
+    const llm = createLlmProvider({ OPENAI_API_KEY: 'sk-test' }, 'openai/gpt-6-luna');
+    await llm.complete({ model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hi' }], temperature: 0, reasoningEffort: 'low' });
+    expect(createMock.mock.calls[2][0]).not.toHaveProperty('temperature');
+    expect(createMock.mock.calls[2][0]).toMatchObject({ reasoning_effort: 'low', allowed_openai_params: ['reasoning_effort'] });
+    logSpy.mockRestore();
+  });
+
   it('drops a rejected optional parameter when the proxy gives no allow hint', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const err = Object.assign(new Error('400 Unrecognized request argument supplied: reasoning_effort'), { status: 400 });
